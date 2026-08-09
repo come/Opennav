@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- Same reasoning as backup_rules.xml: include the profile, and nothing else
+         travels. Chart archives stay on the device that downloaded them. -->
     <cloud-backup>
         <include domain="sharedpref" path="opennav.xml" />
-        <exclude domain="file" path="charts" />
-        <exclude domain="external" path="charts" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="opennav.xml" />
-        <exclude domain="file" path="charts" />
-        <exclude domain="external" path="charts" />
     </device-transfer>
 </data-extraction-rules>

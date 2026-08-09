@@ -98,6 +98,14 @@ jobs:
       - name: Lint
         run: ./gradlew :app:lintDebug
 
+      # Gradle only prints the first lint failure. Dumping the report turns a
+      # one-error-per-CI-round grind into a single pass.
+      - name: Lint report
+        if: failure()
+        run: |
+          report=app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          [ -f "$report" ] && cat "$report" || echo "no lint report produced"
+
       - name: Build
         run: ./gradlew :app:assembleDebug :app:assembleRelease
 

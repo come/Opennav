@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- The boat profile is worth keeping; chart archives are hundreds of megabytes
-         and are re-installed from the desktop, so they stay out of backups. -->
+    <!--
+        An explicit <include> makes everything else opt-out already, so listing the chart
+        directory as an <exclude> is not just redundant, it is a lint error. The boat
+        profile is the only thing worth restoring; chart archives are hundreds of
+        megabytes and get re-installed from the desktop.
+    -->
     <include domain="sharedpref" path="opennav.xml" />
-    <exclude domain="file" path="charts" />
-    <exclude domain="external" path="charts" />
 </full-backup-content>
