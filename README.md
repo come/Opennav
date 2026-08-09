@@ -75,6 +75,17 @@ Deux choses à ne pas rater au moment de choisir :
 * notez le **référentiel altimétrique** annoncé dans la notice du produit. C'est la seule
   information dont vous aurez besoin ensuite, et c'est celle qui peut tout fausser.
 
+### 1 bis. Regarder ce que vous avez téléchargé
+
+```bash
+./tools/inspect_source.py --input '~/litto3d/morbihan/*.asc'
+```
+
+Projection, résolution, nodata, et la plage d'altitudes réellement présente. Ça attrape
+les erreurs classiques avant la conversion : un nuage de points à la place d'un raster,
+un `.asc` livré sans son `.prj` (donc sans projection, donc refusé), ou une dalle qui ne
+couvre pas la zone visée.
+
 ### 2. Trancher la question du zéro hydrographique
 
 Litto3D est livré en altitudes **IGN 1969**. L'app raisonne en hauteurs au-dessus du
@@ -91,16 +102,34 @@ répondre, de la moins bonne à la meilleure :
 --already-chart-datum         # le produit est déjà référencé au ZH
 ```
 
-> **La valeur `3.64` est un exemple, pas une donnée vérifiée par ce dépôt.** C'est l'ordre
-> de grandeur de la cote du zéro hydrographique à Brest. **Allez la lire dans l'annuaire
-> des marées du SHOM pour votre port de référence**, et n'utilisez une constante que sur
-> une zone assez petite pour qu'une seule valeur ait un sens — une rade, pas un
-> département. Au-delà, `--datum-grid` est la bonne réponse.
->
-> Si la notice du produit dit que les données sont déjà au ZH, passez
-> `--already-chart-datum` — mais parce que vous l'avez lu, pas parce que c'est probable.
+> **La valeur `3.64` est un exemple, pas une donnée vérifiée par ce dépôt.**
 
-### 3. Construire le `.pmtiles`
+Plutôt que de chercher ce nombre dans une table, **mesurez-le sur vos propres fichiers**.
+Prenez trois ou quatre points bien répartis, relevez la sonde portée sur la carte SHOM à
+ces positions, et demandez :
+
+```bash
+./tools/inspect_source.py --input '~/litto3d/morbihan/*.asc' \
+    --calibrate -2.9000 47.5430 5.0 \
+    --calibrate -3.0810 47.4640 12.3 \
+    --calibrate -2.8750 47.3360 22.0
+```
+
+Le script sort le décalage impliqué par chaque point, la moyenne, et surtout la
+**dispersion** :
+
+* moins de 15 cm d'écart → une constante est défendable, il vous donne la valeur ;
+* jusqu'à 40 cm → ça passe, mais découpez la zone en deux archives pour être propre ;
+* au-delà → la zone est trop grande pour une constante (ou une sonde est mal relevée), et
+  `--datum-grid` est la bonne réponse ;
+* un décalage quasi nul → vos données sont déjà au ZH, passez `--already-chart-datum`.
+
+C'est plus fiable qu'une table, parce que ça mesure *vos* fichiers plutôt que ce que la
+notice dit d'eux.
+
+### 3. Construire, et vérifier
+
+Une fois le décalage connu :
 
 ```bash
 pip install -r tools/requirements.txt
@@ -112,12 +141,18 @@ pip install -r tools/requirements.txt
     --datum-shift 3.64
 ```
 
-Le script affiche le nombre de tuiles par zoom et le poids final. Utile avant de lancer
-une grosse zone :
+Puis relisez ce que vous venez de produire, avant de le copier sur le téléphone :
 
 ```bash
-./tools/estimate_volume.py --mode band     # combien de tuiles, et quel budget par tuile
+./tools/inspect_pmtiles.py rade-de-brest-bathy.pmtiles
 ```
+
+Il décode de vraies tuiles plutôt que de croire les métadonnées : plage d'altitudes, part
+de cellules non levées, et un avertissement si rien n'est plus profond qu'un mètre — la
+signature d'un `--datum-shift` oublié.
+
+`./tools/estimate_volume.py --mode band` donne le nombre de tuiles et le budget par tuile
+avant de lancer une grosse zone.
 
 ### 4. Le mettre dans l'app
 

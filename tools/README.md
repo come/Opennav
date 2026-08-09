@@ -7,6 +7,10 @@ Tourne une fois, sur un poste de travail. **Jamais sur le téléphone.**
 | `make_sample_pmtiles.py` | aucune | fabrique un fond marin synthétique pour lancer l'app sans données SHOM |
 | `build_bathymetry.py` | `rasterio` | Litto3D → Terrain-RGB → `.pmtiles` |
 | `estimate_volume.py` | aucune | répond au risque « moins de 400 Mo pour la Bretagne ? » |
+| `build_area.py` | selon les étapes | **le point d'entrée** : une zone, une commande |
+| `build_seamarks.py` | `osmium` | extrait OSM → balisage en tuiles vectorielles |
+| `inspect_source.py` | `rasterio` | qu'ai-je téléchargé, et quel est le décalage vertical ? |
+| `inspect_pmtiles.py` | aucune | qu'y a-t-il vraiment dans l'archive produite ? |
 | `test_tools.py` | aucune | tests, dont le contrôle de parité Python ↔ Kotlin |
 
 Modules partagés : `terrain_rgb.py` (encodage), `pmtiles.py` (écriture et lecture PMTiles
