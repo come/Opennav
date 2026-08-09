@@ -47,6 +47,9 @@ fun SettingsSheet(
     onDeepRangeChange: (Double) -> Unit,
     onShowHudChange: (Boolean) -> Unit,
     onOpenSources: () -> Unit,
+    chartName: String?,
+    importing: Boolean,
+    onImport: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -79,6 +82,22 @@ fun SettingsSheet(
             Text(
                 "L'app ne colore en bleu que l'eau où il reste " +
                     "${format2(boat.requiredWaterMeters)} m sous la sonde, marge comprise.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Divider(Modifier.padding(vertical = 10.dp))
+            Text("Carte", style = MaterialTheme.typography.titleMedium)
+            Text(
+                chartName ?: "aucune carte installée",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            ImportChartButton(importing = importing, onClick = onImport)
+            Text(
+                "Le fichier doit déjà être sur le téléphone. Opennav n'a aucun accès " +
+                    "réseau : il ne peut pas aller chercher une carte tout seul, et la " +
+                    "fabrication d'une zone depuis les dalles Litto3D se fait sur un " +
+                    "ordinateur (voir le README).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

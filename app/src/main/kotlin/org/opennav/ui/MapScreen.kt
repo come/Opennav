@@ -7,6 +7,8 @@
  */
 package org.opennav.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +23,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
@@ -50,9 +57,36 @@ fun MapScreen(
     onRequestLocation: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val settings = remember { BoatSettings(context) }
-    val located = remember { ChartArchive.locate(context) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    var located by remember {
+        mutableStateOf(ChartArchive.locate(context, settings.selectedChartPath))
+    }
     val header = remember(located) { located?.file?.let { PmtilesHeader.read(it) } }
+    var importing by remember { mutableStateOf(false) }
+
+    // The system picker, so a chart can be installed from the phone itself rather than
+    // over adb. It hands back a content URI, which ChartArchive copies into the charts
+    // directory -- MapLibre needs a plain path it can range-read for months.
+    val pickChart = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importing = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { ChartArchive.importFrom(context, uri) }
+            importing = false
+            result
+                .onSuccess { file ->
+                    settings.selectedChartPath = file.absolutePath
+                    located = ChartArchive.locate(context, file.absolutePath)
+                    error = null
+                }
+                .onFailure { error = "Import impossible : ${it.message ?: "fichier illisible"}" }
+        }
+    }
 
     var boat by remember { mutableStateOf(settings.profile) }
     var deepRange by remember { mutableStateOf(settings.deepRangeMeters) }
@@ -72,7 +106,6 @@ fun MapScreen(
     var style by remember { mutableStateOf<Style?>(null) }
     var zoom by remember { mutableStateOf(0.0) }
     var frameMillis by remember { mutableStateOf(0.0) }
-    var error by remember { mutableStateOf<String?>(null) }
 
     var fix by remember { mutableStateOf<Fix?>(null) }
     var following by remember { mutableStateOf(false) }
@@ -108,14 +141,20 @@ fun MapScreen(
     // --- layout -----------------------------------------------------------------
 
     Box(Modifier.fillMaxSize()) {
-        if (located == null) {
+        val chart = located
+        if (chart == null) {
             NoChartInstalled(
                 directory = remember { ChartArchive.preferredDirectory(context).absolutePath },
+                importing = importing,
+                onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
+            // Keyed on the archive: MapViewHost builds its MapView and its style once, so
+            // importing a different chart has to give it a fresh scope to build them in.
+            key(chart.file.absolutePath) {
             MapViewHost(
-                archive = located.file,
+                archive = chart.file,
                 header = header,
                 boat = boat,
                 tideHeightMeters = tideMeters,
@@ -141,6 +180,7 @@ fun MapScreen(
                 onError = { error = it },
                 modifier = Modifier.fillMaxSize(),
             )
+            }
         }
 
         DisclaimerBanner(
@@ -162,7 +202,7 @@ fun MapScreen(
             PerformanceHud(
                 zoom = zoom,
                 frameMillis = frameMillis,
-                archiveBytes = located?.file?.length() ?: 0L,
+                archiveBytes = chart?.file?.length() ?: 0L,
                 header = header,
                 fix = fix,
                 modifier = Modifier
@@ -238,6 +278,9 @@ fun MapScreen(
             onDeepRangeChange = { deepRange = it; settings.deepRangeMeters = it },
             onShowHudChange = { showHud = it; settings.showPerformanceHud = it },
             onOpenSources = { sheet = Sheet.SOURCES },
+            chartName = located?.file?.name,
+            importing = importing,
+            onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
             onDismiss = { sheet = null },
         )
         Sheet.SOURCES -> SourcesSheet(
@@ -261,23 +304,38 @@ fun MapScreen(
 enum class Sheet { SETTINGS, SOURCES }
 
 @Composable
-private fun NoChartInstalled(directory: String, modifier: Modifier = Modifier) {
+private fun NoChartInstalled(
+    directory: String,
+    importing: Boolean,
+    onImport: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Aucune carte installée", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Déposez un fichier .pmtiles dans :\n$directory\n\n" +
-                    "adb push ma-zone.pmtiles $directory/\n\n" +
-                    "Pour un essai sans données SHOM :\n" +
-                    "./tools/make_sample_pmtiles.py",
+                "Choisissez un fichier .pmtiles déjà présent sur le téléphone — " +
+                    "téléchargé, reçu, ou copié par câble.",
                 style = MaterialTheme.typography.bodyMedium,
+            )
+            ImportChartButton(importing = importing, onClick = onImport)
+            Text(
+                "Vous pouvez aussi le déposer directement dans :\n$directory\n\n" +
+                    "adb push ma-zone.pmtiles $directory/\n\n" +
+                    "Fabriquer une carte : voir le README du projet. Pour un essai sans " +
+                    "données SHOM : ./tools/make_sample_pmtiles.py",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
+
+/** MIME types offered to the system picker. PMTiles has no registered type of its own. */
+private val CHART_PICKER_MIME_TYPES = arrayOf("application/octet-stream", "*/*")
 
 private const val INITIAL_TIDE_METERS = 3.0
 private const val RECENTER_MIN_ZOOM = 13.0

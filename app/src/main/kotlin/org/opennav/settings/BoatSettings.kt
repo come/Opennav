@@ -50,6 +50,17 @@ class BoatSettings(context: Context) {
         get() = prefs.getBoolean(KEY_HUD, true)
         set(value) = prefs.edit { putBoolean(KEY_HUD, value) }
 
+    /**
+     * Absolute path of the chart the user last imported or picked.
+     *
+     * Null falls back to "largest archive wins". Storing the choice matters as soon as
+     * importing exists: a freshly imported harbour is smaller than the synthetic sample,
+     * and would otherwise be silently ignored the moment it landed.
+     */
+    var selectedChartPath: String?
+        get() = prefs.getString(KEY_CHART, null)
+        set(value) = prefs.edit { putString(KEY_CHART, value) }
+
     var disclaimerAccepted: Boolean
         get() = prefs.getBoolean(KEY_DISCLAIMER, false)
         set(value) = prefs.edit { putBoolean(KEY_DISCLAIMER, value) }
@@ -61,6 +72,7 @@ class BoatSettings(context: Context) {
         const val KEY_DEEP_RANGE = "deep_range_m"
         const val KEY_HUD = "show_perf_hud"
         const val KEY_DISCLAIMER = "disclaimer_accepted"
+        const val KEY_CHART = "selected_chart_path"
 
         const val DEFAULT_NAME = "Mon bateau"
         const val DEFAULT_DRAFT_M = 1.5f

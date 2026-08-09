@@ -302,6 +302,19 @@ fun ErrorCard(message: String, onDismiss: () -> Unit, modifier: Modifier = Modif
     }
 }
 
+/**
+ * Installs a chart from the phone itself.
+ *
+ * Uses the system document picker, which needs no storage permission and, crucially for
+ * this app, no network: the file is already on the device.
+ */
+@Composable
+fun ImportChartButton(importing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    FilledTonalButton(onClick = onClick, enabled = !importing, modifier = modifier) {
+        Text(if (importing) "Import en cours…" else "Importer une carte (.pmtiles)")
+    }
+}
+
 /** Legend swatch colours, shared by the sources sheet. */
 val LEGEND_BANDS: List<Pair<String, Int>> = listOf(
     "Talonnage" to DepthPalette.AGROUND_ARGB,

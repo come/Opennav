@@ -119,20 +119,33 @@ une grosse zone :
 ./tools/estimate_volume.py --mode band     # combien de tuiles, et quel budget par tuile
 ```
 
-### 4. Le pousser sur le téléphone
+### 4. Le mettre dans l'app
+
+Le plus simple, sans câble : copiez le `.pmtiles` sur le téléphone par le moyen qui vous
+arrange (clé USB, cloud, partage), puis dans l'app **roue → Carte → Importer une carte**.
+Le sélecteur de fichiers Android s'ouvre, l'app recopie l'archive dans son dossier et
+bascule dessus immédiatement. Aucune permission de stockage, aucun accès réseau : le
+fichier est déjà là.
+
+L'import refuse un fichier qui n'est pas une archive PMTiles v3 plutôt que de vous laisser
+avec une carte vide, et il écrit sous un nom temporaire jusqu'à la fin de la copie — un
+import interrompu ne laisse pas une archive tronquée qui aurait l'air valide.
+
+Avec un câble et `adb`, ça marche aussi :
 
 ```bash
 adb shell mkdir -p /sdcard/Android/data/org.opennav/files/charts
 adb push rade-de-brest.pmtiles /sdcard/Android/data/org.opennav/files/charts/
 ```
 
-Pas d'`adb` sous la main ? N'importe quel gestionnaire de fichiers ou un câble USB font
-l'affaire : le dossier `Android/data/org.opennav/files/charts` est accessible sans root et
-sans permission de stockage. Redémarrez l'app après avoir déposé le fichier.
+Le dossier `Android/data/org.opennav/files/charts` est accessible sans root ; n'importe
+quel gestionnaire de fichiers fait l'affaire. Redémarrez l'app après avoir déposé le
+fichier de cette façon.
 
-L'app prend le **plus gros** `.pmtiles` du dossier, pour qu'un vrai levé l'emporte
-naturellement sur l'échantillon synthétique. Vérifiez laquelle est chargée dans
-**Sources** : le nom du fichier, la plage de zooms et l'emprise y sont affichés.
+Quand plusieurs cartes sont installées, celle que vous avez importée en dernier gagne ;
+sinon c'est la plus grosse, pour qu'un vrai levé l'emporte sur l'échantillon synthétique.
+Vérifiez laquelle est chargée dans **Sources** : le nom du fichier, la plage de zooms et
+l'emprise y sont affichés.
 
 ### Ce que l'app ne vérifie pas encore
 
@@ -148,7 +161,7 @@ Carte plein écran, et le minimum autour :
 
 | | |
 |---|---|
-| roue en haut à droite | tirant d'eau, marge de sécurité, légende, sources |
+| roue en haut à droite | tirant d'eau, marge de sécurité, import de carte, légende, sources |
 | barre du bas | recentrer sur le GPS · mesurer · marée · sources |
 | **mesurer** | deux taps posent deux points ; la carte affiche la distance en milles et la route fond initiale |
 | bandeau permanent | le rappel légal, qui ne se ferme pas |
