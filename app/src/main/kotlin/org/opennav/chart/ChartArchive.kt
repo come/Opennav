@@ -36,7 +36,18 @@ object ChartArchive {
     private const val STAGING_SUFFIX = ".part"
     private const val COPY_BUFFER_BYTES = 1 shl 16
 
-    data class Located(val file: File, val directory: File)
+    data class Located(val file: File, val directory: File, val header: PmtilesHeader)
+
+    /**
+     * What is installed, split by what it actually contains.
+     *
+     * The kind is read from the PMTiles header rather than guessed from the filename: a
+     * seamark overlay handed to the depth layer would render as a blank map, and a
+     * bathymetry archive handed to the seamark layer would render as nothing at all.
+     */
+    data class Charts(val bathymetry: Located?, val seamarks: Located?) {
+        val any: Located? get() = bathymetry ?: seamarks
+    }
 
     /** Every directory the app is willing to read charts from, best first. */
     fun searchPath(context: Context): List<File> = buildList {
@@ -52,18 +63,33 @@ object ChartArchive {
         .sortedByDescending { it.length() }
 
     /**
-     * Finds the archive to display, or null if the user has not installed one yet.
+     * Finds what to display: at most one bathymetry archive and at most one seamark
+     * overlay, so the two can be installed independently and shown together.
      *
-     * An explicit choice ([preferredPath], set when the user imports a file) wins. Failing
-     * that the largest archive does, on the assumption that it is a real survey rather
-     * than the synthetic sample.
+     * Within a kind, an explicit choice ([preferredPath], set when the user imports a
+     * file) wins; failing that the largest does, on the assumption that it is a real
+     * survey rather than the synthetic sample.
      */
-    fun locate(context: Context, preferredPath: String? = null): Located? {
-        val candidates = installed(context)
-        if (candidates.isEmpty()) return null
-        val chosen = candidates.firstOrNull { it.absolutePath == preferredPath } ?: candidates.first()
-        Log.i(TAG, "using ${chosen.absolutePath}")
-        return Located(chosen, chosen.parentFile ?: preferredDirectory(context))
+    fun locate(context: Context, preferredPath: String? = null): Charts {
+        val readable = installed(context).mapNotNull { file ->
+            PmtilesHeader.read(file)?.let { Located(file, file.parentFile ?: file, it) }
+        }
+
+        fun pick(tileType: Int): Located? {
+            val ofKind = readable.filter { it.header.tileType == tileType }
+            return ofKind.firstOrNull { it.file.absolutePath == preferredPath }
+                ?: ofKind.firstOrNull()
+        }
+
+        val charts = Charts(
+            bathymetry = pick(PmtilesHeader.TILE_TYPE_PNG),
+            seamarks = pick(PmtilesHeader.TILE_TYPE_MVT),
+        )
+        Log.i(
+            TAG,
+            "bathy=${charts.bathymetry?.file?.name} seamarks=${charts.seamarks?.file?.name}",
+        )
+        return charts
     }
 
     /**

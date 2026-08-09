@@ -48,6 +48,7 @@ fun SettingsSheet(
     onShowHudChange: (Boolean) -> Unit,
     onOpenSources: () -> Unit,
     chartName: String?,
+    seamarkName: String?,
     importing: Boolean,
     onImport: () -> Unit,
     onDismiss: () -> Unit,
@@ -89,7 +90,11 @@ fun SettingsSheet(
             Divider(Modifier.padding(vertical = 10.dp))
             Text("Carte", style = MaterialTheme.typography.titleMedium)
             Text(
-                chartName ?: "aucune carte installée",
+                "Bathymétrie : ${chartName ?: "aucune"}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Balisage : ${seamarkName ?: "aucun"}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             ImportChartButton(importing = importing, onClick = onImport)
@@ -141,6 +146,7 @@ fun SettingsSheet(
 @Composable
 fun SourcesSheet(
     chartName: String?,
+    seamarkName: String?,
     header: PmtilesHeader?,
     onDismiss: () -> Unit,
 ) {
@@ -166,15 +172,30 @@ fun SourcesSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
 
-            Text("Balisage et trait de côte", style = MaterialTheme.typography.titleSmall)
+            Text("Balisage", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Aucun. Cette version n'embarque pas de couche de balisage : ni bouées, " +
-                    "ni feux, ni cardinales, ni épaves, ni trait de côte. Ce que vous " +
-                    "voyez est uniquement de la bathymétrie colorisée.\n\n" +
-                    "La superposition OpenSeaMap / OpenStreetMap (ODbL) est prévue, et " +
-                    "sera créditée ici le jour où elle affichera réellement quelque chose.",
+                if (seamarkName == null) {
+                    "Aucun balisage installé. La carte ne montre que la bathymétrie : " +
+                        "ni bouées, ni feux, ni épaves. Une couche de balisage se " +
+                        "fabrique avec tools/build_seamarks.py et s'importe comme une " +
+                        "carte."
+                } else {
+                    "© OpenSeaMap / OpenStreetMap contributors, ODbL.\n" +
+                        "Source : $seamarkName"
+                },
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (seamarkName != null) {
+                Text(
+                    "⚠ Les marques sont dessinées en pastilles colorées, pas en " +
+                        "symboles IALA. Une pastille jaune vous dit qu'une cardinale " +
+                        "existe là ; elle ne vous dit pas de quel côté passer. Les " +
+                        "données OSM sont contributives et inégales : une bouée peut " +
+                        "manquer, être périmée, ou mal placée.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             Divider()
             Text("Carte chargée", style = MaterialTheme.typography.titleSmall)
@@ -207,8 +228,9 @@ fun SourcesSheet(
                     "de plusieurs dizaines de centimètres.\n" +
                     "• Aucun moteur de marée n'est encore embarqué : la hauteur d'eau " +
                     "est celle que vous réglez à la main.\n" +
-                    "• Aucun balisage n'est affiché. Une zone bleue n'est pas une zone " +
-                    "balisée, et rien à l'écran ne signale une épave ou un danger isolé.\n" +
+                    "• Le balisage, quand il est installé, vient d'OpenStreetMap et non " +
+                    "d'un service hydrographique. Une zone bleue sans pastille n'est pas " +
+                    "une zone sans danger.\n" +
                     "• Aucun courant n'est modélisé.",
                 style = MaterialTheme.typography.bodySmall,
             )

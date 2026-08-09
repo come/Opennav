@@ -64,7 +64,7 @@ fun MapScreen(
     var located by remember {
         mutableStateOf(ChartArchive.locate(context, settings.selectedChartPath))
     }
-    val header = remember(located) { located?.file?.let { PmtilesHeader.read(it) } }
+    val header = remember(located) { located.bathymetry?.header ?: located.seamarks?.header }
     var importing by remember { mutableStateOf(false) }
 
     // The system picker, so a chart can be installed from the phone itself rather than
@@ -141,10 +141,11 @@ fun MapScreen(
     // --- layout -----------------------------------------------------------------
 
     Box(Modifier.fillMaxSize()) {
-        val chart = located
+        val chart = located.bathymetry
         if (chart == null) {
             NoChartInstalled(
                 directory = remember { ChartArchive.preferredDirectory(context).absolutePath },
+                hasSeamarksOnly = located.seamarks != null,
                 importing = importing,
                 onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
                 modifier = Modifier.fillMaxSize(),
@@ -152,9 +153,10 @@ fun MapScreen(
         } else {
             // Keyed on the archive: MapViewHost builds its MapView and its style once, so
             // importing a different chart has to give it a fresh scope to build them in.
-            key(chart.file.absolutePath) {
+            key(chart.file.absolutePath, located.seamarks?.file?.absolutePath) {
             MapViewHost(
                 archive = chart.file,
+                seamarks = located.seamarks?.file,
                 header = header,
                 boat = boat,
                 tideHeightMeters = tideMeters,
@@ -202,7 +204,7 @@ fun MapScreen(
             PerformanceHud(
                 zoom = zoom,
                 frameMillis = frameMillis,
-                archiveBytes = chart?.file?.length() ?: 0L,
+                archiveBytes = located.bathymetry?.file?.length() ?: 0L,
                 header = header,
                 fix = fix,
                 modifier = Modifier
@@ -278,13 +280,15 @@ fun MapScreen(
             onDeepRangeChange = { deepRange = it; settings.deepRangeMeters = it },
             onShowHudChange = { showHud = it; settings.showPerformanceHud = it },
             onOpenSources = { sheet = Sheet.SOURCES },
-            chartName = located?.file?.name,
+            chartName = located.bathymetry?.file?.name,
+            seamarkName = located.seamarks?.file?.name,
             importing = importing,
             onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
             onDismiss = { sheet = null },
         )
         Sheet.SOURCES -> SourcesSheet(
-            chartName = located?.file?.name,
+            chartName = located.bathymetry?.file?.name,
+            seamarkName = located.seamarks?.file?.name,
             header = header,
             onDismiss = { sheet = null },
         )
@@ -306,6 +310,7 @@ enum class Sheet { SETTINGS, SOURCES }
 @Composable
 private fun NoChartInstalled(
     directory: String,
+    hasSeamarksOnly: Boolean,
     importing: Boolean,
     onImport: () -> Unit,
     modifier: Modifier = Modifier,
@@ -315,10 +320,18 @@ private fun NoChartInstalled(
             modifier = Modifier.padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Aucune carte installée", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Choisissez un fichier .pmtiles déjà présent sur le téléphone — " +
-                    "téléchargé, reçu, ou copié par câble.",
+                if (hasSeamarksOnly) "Il manque la bathymétrie" else "Aucune carte installée",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                if (hasSeamarksOnly) {
+                    "Le balisage est installé, mais seul il n'a rien sur quoi se poser. " +
+                        "Importez aussi l'archive de bathymétrie de la même zone."
+                } else {
+                    "Choisissez un fichier .pmtiles déjà présent sur le téléphone — " +
+                        "téléchargé, reçu, ou copié par câble."
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             ImportChartButton(importing = importing, onClick = onImport)

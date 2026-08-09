@@ -41,6 +41,7 @@ import java.io.File
 @Composable
 fun MapViewHost(
     archive: File,
+    seamarks: File?,
     header: PmtilesHeader?,
     boat: BoatProfile,
     tideHeightMeters: Double,
@@ -120,7 +121,9 @@ fun MapViewHost(
                 }
 
                 map.setStyle(
-                    DepthLayers.styleBuilder(archive, boat, tideHeightMeters, deepRangeMeters),
+                    DepthLayers.styleBuilder(
+                        archive, seamarks, boat, tideHeightMeters, deepRangeMeters,
+                    ),
                 ) { style ->
                     currentOnReady(map, style)
                     currentOnCamera(map.cameraPosition)

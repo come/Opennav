@@ -15,6 +15,7 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.sources.RasterDemSource
+import org.maplibre.android.style.sources.VectorSource
 import org.opennav.core.depth.BoatProfile
 import org.opennav.core.depth.DepthPalette
 import org.opennav.core.geo.LatLon
@@ -32,17 +33,22 @@ import java.io.File
 object DepthLayers {
 
     const val SOURCE_BATHY = "bathy"
+    const val SOURCE_SEAMARKS = "seamarks"
     const val SOURCE_ROUTE = "route"
     const val SOURCE_POSITION = "position"
 
     const val LAYER_BACKGROUND = "background"
     const val LAYER_DEPTH = "depth"
+    const val LAYER_SEAMARKS = "seamark-dots"
     const val LAYER_ROUTE_LINE = "route-line"
     const val LAYER_ROUTE_POINTS = "route-points"
     const val LAYER_POSITION = "position-dot"
 
     /** Tile size of the archives the pipeline produces. */
     const val TILE_SIZE = 256
+
+    /** Layer name inside the seamark vector tiles, set by tools/build_seamarks.py. */
+    const val SEAMARK_SOURCE_LAYER = "seamarks"
 
     private const val EMPTY_STYLE = """{"version":8,"sources":{},"layers":[]}"""
 
@@ -51,6 +57,7 @@ object DepthLayers {
 
     fun styleBuilder(
         archive: File,
+        seamarks: File?,
         boat: BoatProfile,
         tideHeightMeters: Double,
         deepRangeMeters: Double,
@@ -85,17 +92,93 @@ object DepthLayers {
             PropertyFactory.circleStrokeColor(0xFFFFFFFF.toInt()),
         )
 
-        return Style.Builder()
+        val builder = Style.Builder()
             .fromJson(EMPTY_STYLE)
             .withSource(RasterDemSource(SOURCE_BATHY, ChartArchive.sourceUri(archive), TILE_SIZE))
             .withSource(GeoJsonSource(SOURCE_ROUTE, emptyFeatureCollection()))
             .withSource(GeoJsonSource(SOURCE_POSITION, emptyFeatureCollection()))
             .withLayer(background)
             .withLayer(depth)
+
+        // Buoyage sits above the depths and below the mariner's own marks: it is
+        // reference, not something they placed.
+        if (seamarks != null) {
+            builder
+                .withSource(VectorSource(SOURCE_SEAMARKS, ChartArchive.sourceUri(seamarks)))
+                .withLayer(seamarkLayer())
+        }
+
+        return builder
             .withLayer(routeLine)
             .withLayer(routePoints)
             .withLayer(position)
     }
+
+    /**
+     * Buoyage, drawn as coloured dots.
+     *
+     * **These are not IALA symbols.** A proper chart draws a south cardinal as a specific
+     * shape with a specific topmark; this draws a yellow-black dot. Rendering real
+     * symbology needs a sprite sheet, and labels need a glyph source, neither of which an
+     * app with no network can fetch -- both have to be bundled, which is a Phase 2 job.
+     *
+     * A dot in roughly the right colour in roughly the right place is still worth having:
+     * it tells you a mark exists there, which the depth layer alone never will. It is not
+     * enough to identify one, and the Sources screen says so.
+     */
+    private fun seamarkLayer(): CircleLayer = CircleLayer(LAYER_SEAMARKS, SOURCE_SEAMARKS)
+        .withSourceLayer(SEAMARK_SOURCE_LAYER)
+        .withProperties(
+            PropertyFactory.circleRadius(
+                Expression.interpolate(
+                    Expression.linear(), Expression.zoom(),
+                    Expression.stop(10, 2.0f),
+                    Expression.stop(13, 4.5f),
+                    Expression.stop(16, 8.0f),
+                ),
+            ),
+            PropertyFactory.circleColor(seamarkColour()),
+            PropertyFactory.circleStrokeWidth(1.5f),
+            PropertyFactory.circleStrokeColor(0xFF101014.toInt()),
+            PropertyFactory.circleOpacity(0.95f),
+        )
+
+    /**
+     * Colour from the OSM tags, closest to the real mark rather than to a legend.
+     *
+     * `colour` is what OpenSeaMap actually carries for most marks; the `match` on
+     * `type` only catches what has no colour of its own.
+     */
+    private fun seamarkColour(): Expression = Expression.raw(
+        // One line on purpose: MapLibre parses this string, and reflowing it for
+        // readability has a habit of introducing a stray character that turns the whole
+        // style into a silent no-op.
+        "[\"case\"," +
+            "[\"==\",[\"get\",\"type\"],\"wreck\"],\"$DANGER\"," +
+            "[\"==\",[\"get\",\"type\"],\"rock\"],\"$DANGER\"," +
+            "[\"==\",[\"get\",\"type\"],\"obstruction\"],\"$DANGER\"," +
+            "[\"==\",[\"get\",\"type\"],\"buoy_isolated_danger\"],\"$BLACK\"," +
+            "[\"==\",[\"get\",\"type\"],\"beacon_isolated_danger\"],\"$BLACK\"," +
+            "[\"==\",[\"get\",\"colour\"],\"red\"],\"$PORT_RED\"," +
+            "[\"==\",[\"get\",\"colour\"],\"green\"],\"$STARBOARD_GREEN\"," +
+            "[\"==\",[\"get\",\"colour\"],\"yellow\"],\"$CARDINAL_YELLOW\"," +
+            "[\"==\",[\"get\",\"colour\"],\"white\"],\"$WHITE\"," +
+            "[\"==\",[\"get\",\"colour\"],\"black\"],\"$BLACK\"," +
+            "[\"==\",[\"get\",\"lateral\"],\"port\"],\"$PORT_RED\"," +
+            "[\"==\",[\"get\",\"lateral\"],\"starboard\"],\"$STARBOARD_GREEN\"," +
+            "[\"has\",\"cardinal\"],\"$CARDINAL_YELLOW\"," +
+            "[\"has\",\"light_colour\"],\"$LIGHT\"," +
+            "\"$UNKNOWN_MARK\"]",
+    )
+
+    private const val DANGER = "rgba(255,64,160,1)"
+    private const val PORT_RED = "rgba(214,40,40,1)"
+    private const val STARBOARD_GREEN = "rgba(46,170,80,1)"
+    private const val CARDINAL_YELLOW = "rgba(240,200,40,1)"
+    private const val WHITE = "rgba(245,245,245,1)"
+    private const val BLACK = "rgba(30,30,30,1)"
+    private const val LIGHT = "rgba(255,245,200,1)"
+    private const val UNKNOWN_MARK = "rgba(200,200,210,1)"
 
     /** Re-colours the depth layer. Cheap enough to call on every slider frame. */
     fun updateDepthRamp(

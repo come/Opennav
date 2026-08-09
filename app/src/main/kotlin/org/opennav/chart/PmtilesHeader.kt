@@ -24,6 +24,8 @@ import java.nio.ByteOrder
  * Spec: https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md
  */
 data class PmtilesHeader(
+    /** 1 = Mapbox Vector Tile (seamarks), 2 = PNG (Terrain-RGB bathymetry). */
+    val tileType: Int,
     val minZoom: Int,
     val maxZoom: Int,
     val minLon: Double,
@@ -38,6 +40,10 @@ data class PmtilesHeader(
     companion object {
         private const val TAG = "PmtilesHeader"
         private const val HEADER_LENGTH = 127
+
+        /** PMTiles tile-type values, from the v3 header. */
+        const val TILE_TYPE_MVT = 1
+        const val TILE_TYPE_PNG = 2
         private val MAGIC = byteArrayOf('P'.code.toByte(), 'M'.code.toByte(), 'T'.code.toByte(),
             'i'.code.toByte(), 'l'.code.toByte(), 'e'.code.toByte(), 's'.code.toByte())
 
@@ -53,6 +59,7 @@ data class PmtilesHeader(
 
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             PmtilesHeader(
+                tileType = bytes[99].toInt() and 0xFF,
                 addressedTiles = buffer.getLong(72),
                 minZoom = bytes[100].toInt() and 0xFF,
                 maxZoom = bytes[101].toInt() and 0xFF,

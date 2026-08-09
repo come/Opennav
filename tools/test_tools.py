@@ -10,6 +10,7 @@ on the encoding, or every depth in the app is wrong by a constant) and
 
 from __future__ import annotations
 
+import gzip
 import os
 import re
 import struct
@@ -21,6 +22,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import mvt
 import png
 import terrain_rgb
 import tiles
@@ -354,6 +356,169 @@ class BuildBathymetryTest(unittest.TestCase):
         )
         self.assertNotEqual(0, result.returncode)
         self.assertIn("datum", result.stderr.lower())
+
+
+try:
+    import mapbox_vector_tile
+    HAS_MVT_DECODER = True
+except ImportError:  # pragma: no cover
+    HAS_MVT_DECODER = False
+
+try:
+    import osmium  # noqa: F401
+    HAS_OSMIUM = True
+except ImportError:  # pragma: no cover
+    HAS_OSMIUM = False
+
+SAMPLE_OSM = """<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6" generator="opennav-test">
+  <node id="1" lat="47.4640" lon="-3.0810" version="1">
+    <tag k="seamark:type" v="buoy_cardinal"/>
+    <tag k="seamark:buoy_cardinal:category" v="south"/>
+    <tag k="seamark:buoy_cardinal:colour" v="yellow;black"/>
+    <tag k="seamark:name" v="Basse du Milieu"/>
+  </node>
+  <node id="2" lat="47.3910" lon="-2.9550" version="1">
+    <tag k="seamark:type" v="buoy_lateral"/>
+    <tag k="seamark:buoy_lateral:category" v="port"/>
+  </node>
+  <node id="3" lat="47.3360" lon="-2.8750" version="1">
+    <tag k="seamark:type" v="wreck"/>
+    <tag k="seamark:wreck:category" v="dangerous"/>
+  </node>
+  <node id="9" lat="48.9000" lon="-1.0000" version="1">
+    <tag k="seamark:type" v="buoy_special_purpose"/>
+  </node>
+  <node id="10" lat="47.5000" lon="-3.0000" version="1">
+    <tag k="highway" v="bus_stop"/>
+  </node>
+</osm>
+"""
+
+CLIP = ("-3.32", "47.28", "-2.65", "47.66")
+
+
+@unittest.skipUnless(HAS_MVT_DECODER, "mapbox-vector-tile not installed")
+class MvtTest(unittest.TestCase):
+    """The MVT writer is hand-rolled protobuf, so it is checked against a real decoder.
+
+    Verifying it with a decoder of my own would only prove the two share a
+    misunderstanding; a malformed tile renders as nothing at all on the phone, which is
+    the hardest kind of bug to notice on a boat.
+    """
+
+    def test_a_reference_decoder_reads_what_we_write(self):
+        features = [
+            mvt.PointFeature(-3.081, 47.464, {"type": "buoy_cardinal", "n": 3, "ok": True}),
+            mvt.PointFeature(-3.080, 47.465, {"type": "wreck"}),
+        ]
+        zoom = 14
+        x = int(tiles.lon_to_pixel_x(-3.081, zoom) // 256)
+        y = int(tiles.lat_to_pixel_y(47.464, zoom) // 256)
+
+        blob = mvt.encode_tile({"seamarks": features}, zoom, x, y)
+        self.assertIsNotNone(blob)
+
+        decoded = mapbox_vector_tile.decode(blob)
+        self.assertIn("seamarks", decoded)
+        got = decoded["seamarks"]["features"]
+        self.assertEqual(2, len(got))
+        self.assertEqual("Point", got[0]["geometry"]["type"])
+        self.assertEqual("buoy_cardinal", got[0]["properties"]["type"])
+        self.assertEqual(3, got[0]["properties"]["n"])
+        self.assertTrue(got[0]["properties"]["ok"])
+
+    def test_features_land_where_they_belong(self):
+        # A point placed at a tile's centre must decode near the middle of the extent.
+        zoom, lon, lat = 14, -3.081, 47.464
+        x = int(tiles.lon_to_pixel_x(lon, zoom) // 256)
+        y = int(tiles.lat_to_pixel_y(lat, zoom) // 256)
+        blob = mvt.encode_tile({"s": [mvt.PointFeature(lon, lat, {"a": "b"})]}, zoom, x, y)
+        coords = mapbox_vector_tile.decode(blob)["s"]["features"][0]["geometry"]["coordinates"]
+        self.assertTrue(0 <= coords[0] <= mvt.DEFAULT_EXTENT)
+        self.assertTrue(0 <= coords[1] <= mvt.DEFAULT_EXTENT)
+
+    def test_a_tile_with_nothing_in_it_is_not_written(self):
+        far = [mvt.PointFeature(2.35, 48.85, {"type": "buoy_lateral"})]  # Paris
+        self.assertIsNone(mvt.encode_tile({"seamarks": far}, 14, 8000, 5600))
+
+
+@unittest.skipUnless(HAS_OSMIUM and HAS_MVT_DECODER, "osmium / decoder not installed")
+class BuildSeamarksTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.source = os.path.join(cls._tmp.name, "extract.osm")
+        cls.archive = os.path.join(cls._tmp.name, "seamarks.pmtiles")
+        with open(cls.source, "w", encoding="utf-8") as fh:
+            fh.write(SAMPLE_OSM)
+        subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "tools", "build_seamarks.py"),
+             "--input", cls.source, "--out", cls.archive,
+             "--clip-bounds", *CLIP,
+             "--min-zoom", "12", "--max-zoom", "14", "--area-name", "unit test"],
+            check=True, capture_output=True,
+        )
+        cls.reader = PMTilesReader(cls.archive)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _features(self, zoom: int) -> list[dict]:
+        x0, y0, x1, y1 = tiles.tile_range(self.reader.bounds, zoom, tiles.TILE_SIZE)
+        out: list[dict] = []
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                blob = self.reader.get(zoom, x, y)
+                if not blob:
+                    continue
+                decoded = mapbox_vector_tile.decode(gzip.decompress(blob))
+                for layer in decoded.values():
+                    out += layer["features"]
+        return out
+
+    def test_declares_itself_as_vector_tiles(self):
+        # MapLibre picks its decoder from these two header fields; getting them wrong
+        # yields an empty map rather than an error.
+        self.assertEqual(1, self.reader.tile_type, "tile type must be MVT")
+        self.assertEqual(2, self.reader.tile_compression, "tiles must say they are gzipped")
+        self.assertEqual(
+            "seamarks", self.reader.metadata["vector_layers"][0]["id"]
+        )
+        self.assertIn("OpenSeaMap", self.reader.metadata["attribution"])
+
+    def test_keeps_seamarks_and_only_seamarks(self):
+        features = self._features(14)
+        kinds = sorted(f["properties"]["type"] for f in features)
+        self.assertEqual(["buoy_cardinal", "buoy_lateral", "wreck"], kinds)
+
+    def test_carries_the_tags_the_app_styles_on(self):
+        by_type = {f["properties"]["type"]: f["properties"] for f in self._features(14)}
+        self.assertEqual("south", by_type["buoy_cardinal"]["cardinal"])
+        self.assertEqual("Basse du Milieu", by_type["buoy_cardinal"]["name"])
+        self.assertEqual("port", by_type["buoy_lateral"]["lateral"])
+        self.assertEqual("dangerous", by_type["wreck"]["wreck"])
+
+    def test_clip_bounds_are_honoured(self):
+        # The special-purpose buoy sits off Normandy, well outside the clip.
+        self.assertNotIn(
+            "buoy_special_purpose",
+            [f["properties"]["type"] for f in self._features(14)],
+        )
+
+    def test_refuses_an_extract_with_no_seamark(self):
+        empty = os.path.join(self._tmp.name, "empty.osm")
+        with open(empty, "w", encoding="utf-8") as fh:
+            fh.write("<?xml version='1.0'?><osm version='0.6' generator='t'></osm>")
+        result = subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "tools", "build_seamarks.py"),
+             "--input", empty, "--out", os.path.join(self._tmp.name, "nope.pmtiles")],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no seamark", result.stderr.lower())
 
 
 def _decode_terrain_png(blob: bytes) -> list[float]:
