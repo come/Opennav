@@ -124,12 +124,8 @@ fun MapScreen(
                     map = readyMap
                     style = readyStyle
                 },
-                onCameraChanged = { camera ->
-                    zoom = camera.zoom
-                    // Any camera movement that was not the follow animation means the
-                    // user took the helm back.
-                    if (following && !isNear(camera.target, fix?.position)) following = false
-                },
+                onCameraChanged = { camera -> zoom = camera.zoom },
+                onUserPannedMap = { following = false },
                 onFrameRendered = { frameMillis = it },
                 onTap = { point ->
                     if (tapTool == TapTool.MEASURE) {
@@ -286,15 +282,3 @@ private fun NoChartInstalled(directory: String, modifier: Modifier = Modifier) {
 private const val INITIAL_TIDE_METERS = 3.0
 private const val RECENTER_MIN_ZOOM = 13.0
 private const val CAMERA_FOLLOW_MILLIS = 600
-
-/** True when the camera is still sitting on the fix, i.e. the follow animation is intact. */
-private fun isNear(target: LatLng?, position: LatLon?): Boolean {
-    if (target == null || position == null) return false
-    val dLat = target.latitude - position.latitude
-    val dLon = target.longitude - position.longitude
-    return dLat * dLat + dLon * dLon < FOLLOW_TOLERANCE_DEG_SQUARED
-}
-
-// About 100 m at these latitudes: loose enough not to fight the follow animation,
-// tight enough that a deliberate pan drops out of follow immediately.
-private const val FOLLOW_TOLERANCE_DEG_SQUARED = 1e-6

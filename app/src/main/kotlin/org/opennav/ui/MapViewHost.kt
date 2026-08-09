@@ -47,6 +47,7 @@ fun MapViewHost(
     deepRangeMeters: Double,
     onMapReady: (MapLibreMap, Style) -> Unit,
     onCameraChanged: (CameraPosition) -> Unit,
+    onUserPannedMap: () -> Unit,
     onFrameRendered: (Double) -> Unit,
     onTap: (LatLon) -> Boolean,
     onError: (String) -> Unit,
@@ -57,6 +58,7 @@ fun MapViewHost(
 
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnCamera by rememberUpdatedState(onCameraChanged)
+    val currentOnPan by rememberUpdatedState(onUserPannedMap)
     val currentOnFrame by rememberUpdatedState(onFrameRendered)
     val currentOnReady by rememberUpdatedState(onMapReady)
     val currentOnError by rememberUpdatedState(onError)
@@ -108,6 +110,14 @@ fun MapViewHost(
                 }
                 map.addOnCameraMoveListener { currentOnCamera(map.cameraPosition) }
                 map.addOnCameraIdleListener { currentOnCamera(map.cameraPosition) }
+                map.addOnCameraMoveStartedListener { reason ->
+                    // Only a real gesture takes the helm back. Comparing the camera to
+                    // the fix instead would break follow mode on its very first frame,
+                    // since the recentre animation necessarily starts away from it.
+                    if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                        currentOnPan()
+                    }
+                }
 
                 map.setStyle(
                     DepthLayers.styleBuilder(archive, boat, tideHeightMeters, deepRangeMeters),
