@@ -168,7 +168,11 @@ fun SourcesSheet(
 
             Text("Balisage et trait de côte", style = MaterialTheme.typography.titleSmall)
             Text(
-                "© OpenSeaMap / OpenStreetMap contributors, ODbL.",
+                "Aucun. Cette version n'embarque pas de couche de balisage : ni bouées, " +
+                    "ni feux, ni cardinales, ni épaves, ni trait de côte. Ce que vous " +
+                    "voyez est uniquement de la bathymétrie colorisée.\n\n" +
+                    "La superposition OpenSeaMap / OpenStreetMap (ODbL) est prévue, et " +
+                    "sera créditée ici le jour où elle affichera réellement quelque chose.",
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -202,7 +206,10 @@ fun SourcesSheet(
                     "dépression ou un coup de vent d'ouest peut décaler le niveau réel " +
                     "de plusieurs dizaines de centimètres.\n" +
                     "• Aucun moteur de marée n'est encore embarqué : la hauteur d'eau " +
-                    "est celle que vous réglez à la main.",
+                    "est celle que vous réglez à la main.\n" +
+                    "• Aucun balisage n'est affiché. Une zone bleue n'est pas une zone " +
+                    "balisée, et rien à l'écran ne signale une épave ou un danger isolé.\n" +
+                    "• Aucun courant n'est modélisé.",
                 style = MaterialTheme.typography.bodySmall,
             )
 

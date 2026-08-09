@@ -230,8 +230,18 @@ utilise automatiquement une vraie clé si le secret `RELEASE_KEYSTORE_BASE64` es
 
 ## Sources et licences
 
+Actuellement affiché, et donc actuellement attribué :
+
 ```
 Shom - IGN, 2024. https://doi.org/10.17183/LITTO3D_BZH_2018_2021   (Licence Ouverte 2.0)
+```
+
+**OpenSeaMap n'est pas utilisé.** La superposition du balisage est prévue en phase 2 ;
+tant qu'elle n'affiche rien, l'app ne la crédite pas — attribuer une source dont on ne
+montre aucune donnée laisserait croire que le balisage est à l'écran alors qu'il n'y est
+pas. Le jour où la couche existera :
+
+```
 © OpenSeaMap / OpenStreetMap contributors                          (ODbL)
 ```
 

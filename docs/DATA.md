@@ -127,5 +127,8 @@ pour qu'elle voyage avec le fichier :
 
 ```
 Shom - IGN, 2024. https://doi.org/10.17183/LITTO3D_BZH_2018_2021   (Licence Ouverte 2.0)
-© OpenSeaMap / OpenStreetMap contributors                          (ODbL)
 ```
+
+La ligne OpenSeaMap / OpenStreetMap (ODbL) s'ajoutera **avec** la couche de balisage, pas
+avant. Créditer une source dont on n'affiche aucune donnée n'est pas une politesse : sur
+une app de navigation, ça laisse croire que le balisage est à l'écran. Il n'y est pas.
