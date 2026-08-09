@@ -10,7 +10,9 @@ package org.opennav.chart
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.ColorReliefLayer
+import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -33,16 +35,31 @@ import java.io.File
 object DepthLayers {
 
     const val SOURCE_BATHY = "bathy"
+    const val SOURCE_BASEMAP = "basemap"
     const val SOURCE_SEAMARKS = "seamarks"
     const val SOURCE_ROUTE = "route"
     const val SOURCE_POSITION = "position"
 
     const val LAYER_BACKGROUND = "background"
     const val LAYER_DEPTH = "depth"
+    const val LAYER_WATER = "base-water"
+    const val LAYER_HARBOUR = "base-harbour"
+    const val LAYER_LAND = "base-land"
+    const val LAYER_COASTLINE = "base-coastline"
+    const val LAYER_STRUCTURE = "base-structure"
+    const val LAYER_PLACE = "base-place"
     const val LAYER_SEAMARKS = "seamark-dots"
     const val LAYER_ROUTE_LINE = "route-line"
     const val LAYER_ROUTE_POINTS = "route-points"
     const val LAYER_POSITION = "position-dot"
+
+    /** Source layers inside the base map tiles, set by tools/build_basemap.py. */
+    private const val SOURCE_LAYER_LAND = "land"
+    private const val SOURCE_LAYER_WATER = "water"
+    private const val SOURCE_LAYER_HARBOUR = "harbour"
+    private const val SOURCE_LAYER_COASTLINE = "coastline"
+    private const val SOURCE_LAYER_STRUCTURE = "structure"
+    private const val SOURCE_LAYER_PLACE = "place"
 
     /** Tile size of the archives the pipeline produces. */
     const val TILE_SIZE = 256
@@ -66,6 +83,7 @@ object DepthLayers {
      */
     fun styleBuilder(
         archive: File?,
+        basemap: File?,
         seamarks: File?,
         boat: BoatProfile,
         tideHeightMeters: Double,
@@ -114,6 +132,16 @@ object DepthLayers {
                 .withLayer(depth)
         }
 
+        // The base map goes over the depths. That ordering is what makes an island read
+        // as an island: the depth ramp paints land above chart datum in the aground red,
+        // which is correct as an answer to "can I go there" and useless as a coastline.
+        if (basemap != null) {
+            builder.withSource(
+                VectorSource(SOURCE_BASEMAP, ChartArchive.sourceUri(basemap)),
+            )
+            basemapLayers().forEach { builder.withLayer(it) }
+        }
+
         // Buoyage sits above the depths and below the mariner's own marks: it is
         // reference, not something they placed.
         if (seamarks != null) {
@@ -127,6 +155,87 @@ object DepthLayers {
             .withLayer(routePoints)
             .withLayer(position)
     }
+
+    /**
+     * The OSM base map, in draw order.
+     *
+     * Deliberately quiet. This is the paper under the chart, not the chart: it has to
+     * make an island read as an island and a breakwater as something solid, without
+     * competing with the depth bands or the buoyage for attention. Hence unsaturated
+     * greys and greens against the blues, and no fill anywhere near the blue of safe
+     * water.
+     *
+     * **The mainland is not filled**, because `build_basemap.py` cannot fill it without
+     * reassembling coastline rings against the clip box, and a mistake there draws land
+     * over navigable water. The coastline stroke carries the shore instead. Islands are
+     * filled because their rings are closed in OSM already.
+     */
+    private fun basemapLayers(): List<org.maplibre.android.style.layers.Layer> = listOf(
+        FillLayer(LAYER_WATER, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_WATER)
+            .withProperties(
+                PropertyFactory.fillColor(WATER_FILL),
+                PropertyFactory.fillOpacity(1.0f),
+            ),
+        FillLayer(LAYER_HARBOUR, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_HARBOUR)
+            .withProperties(
+                PropertyFactory.fillColor(HARBOUR_FILL),
+                PropertyFactory.fillOpacity(0.55f),
+            ),
+        FillLayer(LAYER_LAND, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_LAND)
+            .withProperties(
+                PropertyFactory.fillColor(LAND_FILL),
+                PropertyFactory.fillOutlineColor(SHORE_LINE),
+                PropertyFactory.fillOpacity(1.0f),
+            ),
+        LineLayer(LAYER_COASTLINE, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_COASTLINE)
+            .withProperties(
+                PropertyFactory.lineColor(SHORE_LINE),
+                PropertyFactory.lineWidth(
+                    Expression.interpolate(
+                        Expression.linear(), Expression.zoom(),
+                        Expression.stop(6, 0.6f),
+                        Expression.stop(11, 1.4f),
+                        Expression.stop(16, 2.6f),
+                    ),
+                ),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            ),
+        LineLayer(LAYER_STRUCTURE, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_STRUCTURE)
+            .withProperties(
+                PropertyFactory.lineColor(STRUCTURE_LINE),
+                PropertyFactory.lineWidth(
+                    Expression.interpolate(
+                        Expression.linear(), Expression.zoom(),
+                        Expression.stop(11, 1.0f),
+                        Expression.stop(16, 4.0f),
+                    ),
+                ),
+                PropertyFactory.lineCap(Property.LINE_CAP_BUTT),
+            ),
+        // Settlements as plain dots. Drawing their names needs a glyph source, and an
+        // app with no network has to carry the font ranges in the APK -- a separate
+        // job. The names are already in the tiles, so that day is a style change.
+        CircleLayer(LAYER_PLACE, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_PLACE)
+            .withProperties(
+                PropertyFactory.circleRadius(2.5f),
+                PropertyFactory.circleColor(PLACE_DOT),
+                PropertyFactory.circleOpacity(0.8f),
+            ),
+    )
+
+    private const val LAND_FILL = 0xFF2E3A2C.toInt()
+    private const val SHORE_LINE = 0xFFBFC9B4.toInt()
+    private const val WATER_FILL = 0xFF16324A.toInt()
+    private const val HARBOUR_FILL = 0xFF3A4652.toInt()
+    private const val STRUCTURE_LINE = 0xFF8A8F96.toInt()
+    private const val PLACE_DOT = 0xFFD8D8D0.toInt()
 
     /**
      * Buoyage, drawn as coloured dots.

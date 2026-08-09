@@ -47,8 +47,9 @@ import java.io.File
  */
 @Composable
 fun MapViewHost(
-    /** Bathymetry, or null to draw buoyage and position without any depths. */
+    /** Bathymetry, or null to draw the base map, buoyage and position without depths. */
     archive: File?,
+    basemap: File?,
     seamarks: File?,
     header: PmtilesHeader?,
     boat: BoatProfile,
@@ -117,7 +118,8 @@ fun MapViewHost(
 
                         map.setStyle(
                             DepthLayers.styleBuilder(
-                                archive, seamarks, boat, tideHeightMeters, deepRangeMeters,
+                                archive, basemap, seamarks,
+                                boat, tideHeightMeters, deepRangeMeters,
                             ),
                         ) { style ->
                             currentOnReady(map, style)

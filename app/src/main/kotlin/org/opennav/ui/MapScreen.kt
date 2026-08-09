@@ -201,10 +201,12 @@ fun MapScreen(
             // importing a different chart has to give it a fresh scope to build them in.
             key(
                 located.bathymetry?.file?.absolutePath,
+                located.basemap?.file?.absolutePath,
                 located.seamarks?.file?.absolutePath,
             ) {
             MapViewHost(
                 archive = located.bathymetry?.file,
+                basemap = located.basemap?.file,
                 seamarks = located.seamarks?.file,
                 header = header,
                 boat = boat,
@@ -243,7 +245,7 @@ fun MapScreen(
             DisclaimerBanner(modifier = Modifier.fillMaxWidth())
             if (located.bathymetry?.header?.synthetic == true) {
                 SyntheticChartBanner(modifier = Modifier.fillMaxWidth())
-            } else if (located.bathymetry == null && located.seamarks != null) {
+            } else if (located.bathymetry == null && located.any != null) {
                 NoBathymetryBanner(modifier = Modifier.fillMaxWidth())
             }
         }
@@ -340,6 +342,7 @@ fun MapScreen(
             onShowHudChange = { showHud = it; settings.showPerformanceHud = it },
             onOpenSources = { sheet = Sheet.SOURCES },
             chartName = located.bathymetry?.file?.name,
+            basemapName = located.basemap?.file?.name,
             seamarkName = located.seamarks?.file?.name,
             importing = importing,
             canRemoveDemo = located.bathymetry?.header?.synthetic == true,
@@ -355,6 +358,7 @@ fun MapScreen(
         )
         Sheet.SOURCES -> SourcesSheet(
             chartName = located.bathymetry?.file?.name,
+            basemapName = located.basemap?.file?.name,
             seamarkName = located.seamarks?.file?.name,
             header = header,
             syntheticBathymetry = located.bathymetry?.header?.synthetic == true,

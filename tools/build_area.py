@@ -17,7 +17,13 @@ Areas are presets so the bounds are written down once and reviewed, rather than 
 from memory each time. `--bounds` overrides them for anywhere else.
 
 Neither input is optional in spirit, but both are optional in practice: pass only
-``--litto3d`` to rebuild the depths, only ``--osm`` to rebuild the buoyage.
+``--litto3d`` to rebuild the depths, only ``--osm`` to rebuild the base map and the
+buoyage.
+
+``--osm`` produces two archives, not one: the base map (coastline, islands, harbours)
+and the seamark overlay. They are what "OpenSeaMap" means when you see it on the web --
+an ordinary OSM map with the buoyage drawn on top -- and they are separate files because
+they change at different rates and a user may want one without waiting for the other.
 """
 
 from __future__ import annotations
@@ -37,6 +43,10 @@ import tiles as tilemath  # noqa: E402
 #: Bounds are generous on purpose: a chart that stops at the edge of the pilotage area is
 #: worse than useless, because you notice at the moment you leave it.
 AREAS: dict[str, tuple[str, tuple[float, float, float, float]]] = {
+    "bretagne": (
+        "Toute la Bretagne, du Mont-Saint-Michel a la baie de Bourgneuf",
+        (-5.30, 47.00, -1.00, 48.95),
+    ),
     "morbihan": (
         "Baie de Quiberon, Belle-Ile, Houat, Hoedic et golfe du Morbihan",
         (-3.32, 47.28, -2.65, 47.66),
@@ -78,7 +88,9 @@ def main() -> int:
         help="emprise explicite, a la place de --area",
     )
     parser.add_argument("--litto3d", help="dalles Litto3D (glob), pour la bathymetrie")
-    parser.add_argument("--osm", help="extrait .osm.pbf, pour le balisage")
+    parser.add_argument("--osm", help="extrait .osm.pbf, pour le fond de carte ET le balisage")
+    parser.add_argument("--skip-basemap", action="store_true",
+                        help="ne produire que le balisage a partir de --osm")
     parser.add_argument("--out-dir", default=".")
     parser.add_argument("--name", help="prefixe des fichiers produits")
 
@@ -138,6 +150,22 @@ def main() -> int:
             failures.append("bathymetrie")
 
     if args.osm:
+        # Two archives from the one extract, because they answer different questions and
+        # a user may well want the buoyage without waiting for the coastline.
+        if not args.skip_basemap:
+            out = os.path.join(args.out_dir, f"{label}-base.pmtiles")
+            try:
+                run("fond de carte", [
+                    sys.executable, os.path.join(HERE, "build_basemap.py"),
+                    "--input", args.osm, "--out", out,
+                    "--area-name", f"{label} (fond de carte)",
+                    "--clip-bounds", *[str(b) for b in bounds],
+                    "--max-zoom", str(args.max_zoom),
+                ])
+                produced.append(out)
+            except StepFailed:
+                failures.append("fond de carte")
+
         out = os.path.join(args.out_dir, f"{label}-seamarks.pmtiles")
         try:
             run("balisage", [

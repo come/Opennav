@@ -46,7 +46,21 @@ data class PmtilesHeader(
      * sort of thing that must never be mistaken for data.
      */
     val synthetic: Boolean,
+    /**
+     * Layer names declared in the archive's `vector_layers` metadata.
+     *
+     * Empty for raster archives. This is how the app tells two vector archives apart:
+     * the buoyage overlay and the base map are both MVT, so the header's tile type says
+     * only that they are not bathymetry. What they *are* is in here.
+     */
+    val vectorLayers: Set<String>,
 ) {
+    /** True when this archive carries the OpenSeaMap buoyage. */
+    val isSeamarks: Boolean get() = SEAMARK_LAYER in vectorLayers
+
+    /** True when this archive carries the OSM base map: coastline, islands, harbours. */
+    val isBasemap: Boolean get() = vectorLayers.any { it in BASEMAP_LAYERS }
+
     companion object {
         private const val TAG = "PmtilesHeader"
         private const val HEADER_LENGTH = 127
@@ -54,6 +68,12 @@ data class PmtilesHeader(
         /** PMTiles tile-type values, from the v3 header. */
         const val TILE_TYPE_MVT = 1
         const val TILE_TYPE_PNG = 2
+
+        /** Layer names the builders write, and the app styles. Kept in sync by test. */
+        const val SEAMARK_LAYER = "seamarks"
+        val BASEMAP_LAYERS = setOf(
+            "land", "water", "harbour", "coastline", "structure", "place",
+        )
         private val MAGIC = byteArrayOf('P'.code.toByte(), 'M'.code.toByte(), 'T'.code.toByte(),
             'i'.code.toByte(), 'l'.code.toByte(), 'e'.code.toByte(), 's'.code.toByte())
 
@@ -68,14 +88,15 @@ data class PmtilesHeader(
             if (bytes[7].toInt() != 3) return null
 
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-            val synthetic = readsAsSynthetic(
+            val metadata = readMetadata(
                 file,
                 offset = buffer.getLong(24),
                 length = buffer.getLong(32),
                 compression = bytes[97].toInt() and 0xFF,
             )
             PmtilesHeader(
-                synthetic = synthetic,
+                synthetic = metadata?.optBoolean("synthetic", false) ?: false,
+                vectorLayers = vectorLayerNames(metadata),
                 tileType = bytes[99].toInt() and 0xFF,
                 addressedTiles = buffer.getLong(72),
                 minZoom = bytes[100].toInt() and 0xFF,
@@ -95,13 +116,13 @@ data class PmtilesHeader(
         private const val COMPRESSION_GZIP = 2
 
         /** Metadata is a small JSON blob; a chart that lies about this is not our problem. */
-        private fun readsAsSynthetic(
+        private fun readMetadata(
             file: File,
             offset: Long,
             length: Long,
             compression: Int,
-        ): Boolean = runCatching {
-            if (length <= 0 || length > MAX_METADATA_BYTES) return false
+        ): JSONObject? = runCatching {
+            if (length <= 0 || length > MAX_METADATA_BYTES) return null
             val raw = ByteArray(length.toInt())
             RandomAccessFile(file, "r").use { raf ->
                 raf.seek(offset)
@@ -112,8 +133,19 @@ data class PmtilesHeader(
             } else {
                 raw
             }
-            JSONObject(String(json, Charsets.UTF_8)).optBoolean("synthetic", false)
-        }.getOrDefault(false)
+            JSONObject(String(json, Charsets.UTF_8))
+        }.getOrNull()
+
+        /** The `id` of every entry in `vector_layers`, which is a TileJSON convention. */
+        private fun vectorLayerNames(metadata: JSONObject?): Set<String> {
+            val array = metadata?.optJSONArray("vector_layers") ?: return emptySet()
+            return buildSet {
+                for (index in 0 until array.length()) {
+                    array.optJSONObject(index)?.optString("id")?.takeIf { it.isNotEmpty() }
+                        ?.let { add(it) }
+                }
+            }
+        }
 
         private const val MAX_METADATA_BYTES = 4L * 1024 * 1024
     }

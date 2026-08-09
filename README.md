@@ -76,20 +76,42 @@ Sans réseau ni service de crash, c'est le seul chemin de retour d'une panne sur
 mouillage. Si le moteur de carte lui-même refuse de démarrer, l'app s'ouvre quand même et
 le dit, au lieu de disparaître.
 
-## Balisage seul, sans bathymétrie
+## Le fond de carte et le balisage OpenStreetMap
 
-Un fichier de balisage suffit à afficher une carte : bouées, feux, épaves d'OpenSeaMap,
-plus votre position GPS. Un bandeau ambre rappelle qu'il n'y a **aucune profondeur** —
-donc aucune alerte de haut-fond — et le curseur de hauteur d'eau disparaît, parce qu'un
-réglage qui ne change rien à l'écran se lit comme un réglage pris en compte.
+Ce qu'on appelle « OpenSeaMap » sur le web, ce sont **deux choses empilées** : une carte
+OSM ordinaire, et la couche de balisage par-dessus. Opennav ne fabriquait que la seconde,
+d'où des bouées flottant sur un fond noir. Les deux se construisent maintenant depuis le
+même extrait, en une commande :
 
 ```bash
-./tools/build_area.py --area morbihan --osm bretagne-latest.osm.pbf
-# puis, dans l'app : roue → Carte → Importer une carte
+wget https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf
+./tools/build_area.py --area bretagne --osm bretagne-latest.osm.pbf
 ```
 
-Construire la bathymétrie Litto3D prend une soirée ; le balisage prend quelques minutes.
-Faire attendre le second après le premier n'avait aucune raison d'être.
+Deux fichiers sortent — `bretagne-base.pmtiles` et `bretagne-seamarks.pmtiles` — à
+importer l'un après l'autre (roue ⚙ → Carte → Importer une carte). Ils sont séparés parce
+qu'ils ne changent pas au même rythme, et parce qu'on peut vouloir l'un sans attendre
+l'autre.
+
+Le fond de carte porte six couches : trait de côte, îles, eau intérieure, ports et
+marinas, jetées et brise-lames, et les lieux habités. **Le continent n'est pas rempli,
+seulement tracé.** Dans OSM le trait de côte continental est une suite de lignes ouvertes
+qui ne se referment qu'à l'échelle d'un continent ; les refermer à l'intérieur d'une
+emprise demande de reconstituer des anneaux contre le bord de la boîte, et s'y tromper
+dessine de la terre là où il y a de l'eau. Sur une carte de navigation, c'est l'erreur à
+ne pas commettre en silence. Les îles, elles, sont remplies : dans OSM leur contour est
+déjà un anneau fermé, donc Houat, Hoëdic, Belle-Île et le moindre îlot du golfe sortent
+en polygones sans aucune reconstruction.
+
+Pas encore de noms de lieux affichés : dessiner du texte demande d'embarquer des fontes
+dans l'APK. Les noms sont déjà dans les tuiles, donc ce jour-là ce sera un changement de
+style, pas de pipeline.
+
+Un fichier suffit à afficher une carte : sans bathymétrie, un bandeau ambre rappelle qu'il
+n'y a **aucune profondeur** — donc aucune alerte de haut-fond — et le curseur de hauteur
+d'eau disparaît, parce qu'un réglage qui ne change rien à l'écran se lit comme un réglage
+pris en compte. Construire la bathymétrie Litto3D prend une soirée, l'OSM quelques
+minutes : faire attendre le second après le premier n'avait aucune raison d'être.
 
 ## Obtenir la bathymétrie de la Bretagne
 

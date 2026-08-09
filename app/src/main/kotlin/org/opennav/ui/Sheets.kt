@@ -50,6 +50,7 @@ fun SettingsSheet(
     onShowHudChange: (Boolean) -> Unit,
     onOpenSources: () -> Unit,
     chartName: String?,
+    basemapName: String?,
     seamarkName: String?,
     importing: Boolean,
     /** True while the bathymetry on screen is the fabricated demo, so it can be dropped. */
@@ -96,6 +97,10 @@ fun SettingsSheet(
             Text("Carte", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Bathymétrie : ${chartName ?: "aucune"}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Fond de carte : ${basemapName ?: "aucun"}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
@@ -164,6 +169,7 @@ fun SettingsSheet(
 @Composable
 fun SourcesSheet(
     chartName: String?,
+    basemapName: String?,
     seamarkName: String?,
     header: PmtilesHeader?,
     /** True while the depths on screen are the fabricated demo rather than a survey. */
@@ -210,6 +216,30 @@ fun SourcesSheet(
                     "Shom - IGN, 2024. https://doi.org/10.17183/LITTO3D_BZH_2018_2021\n" +
                         "Licence Ouverte 2.0 (Etalab).",
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            Text("Fond de carte", style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (basemapName == null) {
+                    "Aucun fond de carte installé : pas de trait de côte, pas d'îles, " +
+                        "pas de jetées. Il se fabrique avec tools/build_basemap.py à " +
+                        "partir d'un extrait OpenStreetMap."
+                } else {
+                    "© OpenStreetMap contributors, ODbL.\nSource : $basemapName"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (basemapName != null) {
+                Text(
+                    "⚠ Le continent n'est pas rempli, seulement tracé. Dans OSM, le " +
+                        "trait de côte continental est une suite de lignes ouvertes ; " +
+                        "les refermer à l'intérieur d'une emprise peut dessiner de la " +
+                        "terre là où il y a de l'eau, et c'est l'erreur à ne pas " +
+                        "commettre. Les îles, elles, sont remplies : leur contour est " +
+                        "déjà fermé dans la donnée.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 

@@ -24,6 +24,7 @@ from xml.etree import ElementTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import build_area
+import build_basemap
 import inspect_pmtiles
 import make_sample_pmtiles
 import mvt
@@ -264,6 +265,145 @@ class SyntheticSeabedTest(unittest.TestCase):
     def test_refuses_an_inverted_window(self):
         with self.assertRaises(ValueError):
             make_sample_pmtiles.Seabed((-2.0, 48.0, -3.0, 47.0))
+
+
+class MvtGeometryTest(unittest.TestCase):
+    """Clipping, winding and simplification, which the base map lives or dies on."""
+
+    def test_a_line_leaving_and_returning_comes_back_as_two_pieces(self):
+        # Straight through, out, and back in. One piece would draw a shortcut across
+        # ground the line never crossed.
+        points = [(1.0, 1.0), (9.0, 1.0), (9.0, 20.0), (1.0, 20.0), (1.0, 1.0)]
+        parts = mvt.clip_line(points, 0.0, 10.0)
+        self.assertEqual(2, len(parts), parts)
+        for part in parts:
+            for x, y in part:
+                self.assertTrue(-1e-9 <= x <= 10 + 1e-9 and -1e-9 <= y <= 10 + 1e-9)
+
+    def test_a_line_wholly_outside_disappears(self):
+        self.assertEqual([], mvt.clip_line([(20.0, 20.0), (30.0, 30.0)], 0.0, 10.0))
+
+    def test_a_ring_larger_than_the_tile_becomes_the_tile(self):
+        ring = [(-5.0, -5.0), (15.0, -5.0), (15.0, 15.0), (-5.0, 15.0)]
+        clipped = mvt.clip_ring(ring, 0.0, 10.0)
+        self.assertEqual(
+            {(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)}, set(clipped)
+        )
+
+    def test_exterior_rings_are_wound_the_way_the_spec_demands(self):
+        """Positive surveyor's area, y down. A ring wound the other way draws as a hole.
+
+        Which is how an island silently becomes a lake: nothing errors, the tile is
+        valid, and the fill is inverted.
+        """
+        square = [(-3.02, 47.38), (-2.98, 47.38), (-2.98, 47.40), (-3.02, 47.40),
+                  (-3.02, 47.38)]
+        for rings in ([square], [list(reversed(square))]):
+            with self.subTest(rings[0][1]):
+                feature = mvt.PolygonFeature(rings=rings)
+                x, y, _, _ = tiles.tile_range((-3.02, 47.38, -2.98, 47.40), 13, 256)
+                parts, kind = mvt._tile_parts(feature, 13, x, y, 4096, 256, 128, 4.0)
+                self.assertEqual(mvt.GEOM_POLYGON, kind)
+                self.assertGreater(mvt.signed_area(parts[0][:-1]), 0.0)
+
+    def test_simplification_keeps_the_ends_and_drops_the_middle(self):
+        points = [(0.0, 0.0), (1.0, 0.001), (2.0, -0.001), (3.0, 0.0)]
+        simplified = mvt.simplify(points, 4.0)
+        self.assertEqual([(0.0, 0.0), (3.0, 0.0)], simplified)
+
+    def test_simplification_keeps_a_corner_it_cannot_afford_to_lose(self):
+        points = [(0.0, 0.0), (50.0, 900.0), (100.0, 0.0)]
+        self.assertEqual(points, mvt.simplify(points, 4.0))
+
+
+class BuildBasemapTest(unittest.TestCase):
+    """The base map, end to end, over a hand-written extract.
+
+    The interesting assertion is the last one: the app tells the base map and the
+    buoyage apart by the layer names in the metadata, because both are MVT and the
+    PMTiles header cannot distinguish them.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        source = os.path.join(cls._tmp.name, "extract.osm")
+        cls.archive = os.path.join(cls._tmp.name, "base.pmtiles")
+        with open(source, "w", encoding="utf-8") as fh:
+            fh.write(SAMPLE_COAST_OSM)
+        subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "tools", "build_basemap.py"),
+             "--input", source, "--out", cls.archive,
+             "--clip-bounds", "-3.32", "47.28", "-2.65", "47.66",
+             "--min-zoom", "9", "--max-zoom", "13", "--area-name", "unit test"],
+            check=True, capture_output=True,
+        )
+        cls.reader = PMTilesReader(cls.archive)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _features(self, zoom: int) -> dict[str, list[dict]]:
+        out: dict[str, list[dict]] = {}
+        x0, y0, x1, y1 = tiles.tile_range(self.reader.bounds, zoom, tiles.TILE_SIZE)
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                blob = self.reader.get(zoom, x, y)
+                if not blob:
+                    continue
+                for name, layer in mapbox_vector_tile.decode(gzip.decompress(blob)).items():
+                    out.setdefault(name, []).extend(layer["features"])
+        return out
+
+    def test_a_closed_coastline_way_becomes_an_island(self):
+        land = self._features(13).get("land", [])
+        self.assertTrue(land, "expected the closed coastline way as a polygon")
+        self.assertTrue(all(f["geometry"]["type"] == "Polygon" for f in land))
+        self.assertIn("Ile de Houat", {f["properties"].get("name") for f in land})
+
+    def test_an_open_coastline_way_stays_a_line(self):
+        coastline = self._features(13).get("coastline", [])
+        self.assertTrue(coastline)
+        self.assertTrue(
+            all(f["geometry"]["type"] in ("LineString", "MultiLineString")
+                for f in coastline)
+        )
+
+    def test_water_harbours_and_structures_survive(self):
+        layers = self._features(13)
+        self.assertEqual("Etang", layers["water"][0]["properties"]["name"])
+        self.assertEqual("Port-Haliguen", layers["harbour"][0]["properties"]["name"])
+        self.assertEqual("pier", layers["structure"][0]["properties"]["kind"])
+
+    def test_hamlets_wait_for_a_zoom_that_can_show_them(self):
+        names = lambda z: {f["properties"]["name"] for f in self._features(z).get("place", [])}
+        self.assertIn("Quiberon", names(9))
+        self.assertNotIn("Trou perdu", names(9))
+        self.assertIn("Trou perdu", names(13))
+
+    def test_the_app_and_the_builder_agree_on_the_layer_names(self):
+        """The app classifies a vector archive by these names. Drift breaks loading.
+
+        Both the base map and the buoyage are MVT, so the PMTiles tile type says only
+        "not bathymetry". If a name here stops matching the Kotlin, the archive is
+        loaded as neither and the map is silently empty.
+        """
+        path = os.path.join(
+            REPO_ROOT, "app", "src", "main", "kotlin", "org", "opennav", "chart",
+            "PmtilesHeader.kt",
+        )
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read()
+        block = re.search(r"BASEMAP_LAYERS\s*=\s*setOf\((.*?)\)", source, re.S)
+        self.assertIsNotNone(block, "BASEMAP_LAYERS not found in PmtilesHeader.kt")
+        kotlin = set(re.findall(r'"([^"]+)"', block.group(1)))
+        self.assertEqual(set(build_basemap.LAYER_ORDER), kotlin)
+
+        declared = {entry["id"] for entry in self.reader.metadata["vector_layers"]}
+        self.assertEqual(set(build_basemap.LAYER_ORDER), declared)
+        self.assertIn("OpenStreetMap", self.reader.metadata["attribution"])
+        self.assertEqual(1, self.reader.tile_type)
 
 
 class AndroidXmlTest(unittest.TestCase):
@@ -549,6 +689,49 @@ SAMPLE_OSM = """<?xml version='1.0' encoding='UTF-8'?>
 """
 
 CLIP = ("-3.32", "47.28", "-2.65", "47.66")
+
+#: A coastline the size of a postage stamp: one open mainland way, one closed island
+#: way, a lake, a pier, a marina and three settlements at different ranks.
+SAMPLE_COAST_OSM = """<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6" generator="opennav-test">
+  <node id="1" lat="47.50" lon="-3.20"/>
+  <node id="2" lat="47.52" lon="-3.10"/>
+  <node id="3" lat="47.51" lon="-3.00"/>
+  <node id="4" lat="47.53" lon="-2.90"/>
+  <node id="10" lat="47.38" lon="-3.02"/>
+  <node id="11" lat="47.38" lon="-2.98"/>
+  <node id="12" lat="47.40" lon="-2.98"/>
+  <node id="13" lat="47.40" lon="-3.02"/>
+  <node id="20" lat="47.55" lon="-3.15"/>
+  <node id="21" lat="47.55" lon="-3.13"/>
+  <node id="22" lat="47.56" lon="-3.13"/>
+  <node id="23" lat="47.56" lon="-3.15"/>
+  <node id="30" lat="47.505" lon="-3.19"/>
+  <node id="31" lat="47.500" lon="-3.185"/>
+  <node id="40" lat="47.49" lon="-3.19"/>
+  <node id="41" lat="47.49" lon="-3.17"/>
+  <node id="42" lat="47.50" lon="-3.17"/>
+  <node id="43" lat="47.50" lon="-3.19"/>
+  <node id="50" lat="47.487" lon="-3.121">
+    <tag k="place" v="town"/><tag k="name" v="Quiberon"/>
+  </node>
+  <node id="51" lat="47.391" lon="-2.999">
+    <tag k="place" v="island"/><tag k="name" v="Houat"/>
+  </node>
+  <node id="52" lat="47.60" lon="-3.30">
+    <tag k="place" v="hamlet"/><tag k="name" v="Trou perdu"/>
+  </node>
+  <way id="100"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/>
+    <tag k="natural" v="coastline"/></way>
+  <way id="101"><nd ref="10"/><nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="10"/>
+    <tag k="natural" v="coastline"/><tag k="name" v="Ile de Houat"/></way>
+  <way id="102"><nd ref="20"/><nd ref="21"/><nd ref="22"/><nd ref="23"/><nd ref="20"/>
+    <tag k="natural" v="water"/><tag k="name" v="Etang"/></way>
+  <way id="103"><nd ref="30"/><nd ref="31"/><tag k="man_made" v="pier"/></way>
+  <way id="104"><nd ref="40"/><nd ref="41"/><nd ref="42"/><nd ref="43"/><nd ref="40"/>
+    <tag k="leisure" v="marina"/><tag k="name" v="Port-Haliguen"/></way>
+</osm>
+"""
 
 
 @unittest.skipUnless(HAS_MVT_DECODER, "mapbox-vector-tile not installed")

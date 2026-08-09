@@ -9,12 +9,40 @@ Tourne une fois, sur un poste de travail. **Jamais sur le téléphone.**
 | `estimate_volume.py` | aucune | répond au risque « moins de 400 Mo pour la Bretagne ? » |
 | `build_area.py` | selon les étapes | **le point d'entrée** : une zone, une commande |
 | `build_seamarks.py` | `osmium` | extrait OSM → balisage en tuiles vectorielles |
+| `build_basemap.py` | `osmium` | extrait OSM → fond de carte (côte, îles, ports) |
 | `inspect_source.py` | `rasterio` | qu'ai-je téléchargé, et quel est le décalage vertical ? |
 | `inspect_pmtiles.py` | aucune | qu'y a-t-il vraiment dans l'archive produite ? |
 | `test_tools.py` | aucune | tests, dont le contrôle de parité Python ↔ Kotlin |
 
 Modules partagés : `terrain_rgb.py` (encodage), `pmtiles.py` (écriture et lecture PMTiles
-v3), `png.py`, `tiles.py` (arithmétique Web Mercator).
+v3), `png.py`, `tiles.py` (arithmétique Web Mercator), `mvt.py` (tuiles vectorielles :
+points, lignes, polygones, découpage, simplification).
+
+## Le fond de carte
+
+```bash
+./tools/build_basemap.py --input bretagne-latest.osm.pbf --out bretagne-base.pmtiles \
+    --clip-bounds -5.30 47.00 -1.00 48.95
+```
+
+Six couches, choisies pour ce dont un navigateur côtier a besoin plutôt que pour ce
+qu'OSM contient : `coastline`, `land` (les îles), `water`, `harbour`, `structure` (jetées,
+brise-lames, épis) et `place`.
+
+Deux points valent qu'on s'y arrête.
+
+**Le continent n'est pas rempli.** Voir le README principal : refermer des anneaux de
+trait de côte contre le bord d'une emprise peut dessiner de la terre sur de l'eau
+navigable, et c'est l'erreur à ne pas commettre en silence. Les îles le sont, parce
+qu'une voie `natural=coastline` fermée *est* le contour de l'île.
+
+**L'enroulement des anneaux compte.** MVT v2 exige une aire positive (formule de
+l'arpenteur, y vers le bas) pour un anneau extérieur. Un anneau enroulé à l'envers est
+dessiné comme un trou : l'île devient un lac, la tuile reste valide, et rien ne proteste.
+`test_tools.py::MvtGeometryTest` le vérifie dans les deux sens.
+
+Les noms de lieux sont dans les tuiles mais pas encore affichés : le texte demande une
+source de glyphes, donc des fontes embarquées dans l'APK.
 
 ```bash
 python3 -m unittest discover -s tools -v

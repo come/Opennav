@@ -60,8 +60,21 @@ object ChartArchive {
      * seamark overlay handed to the depth layer would render as a blank map, and a
      * bathymetry archive handed to the seamark layer would render as nothing at all.
      */
-    data class Charts(val bathymetry: Located?, val seamarks: Located?) {
-        val any: Located? get() = bathymetry ?: seamarks
+    data class Charts(
+        val bathymetry: Located?,
+        val basemap: Located?,
+        val seamarks: Located?,
+    ) {
+        /**
+         * Whichever archive should set the camera, preferring the most specific.
+         *
+         * Any one of the three is enough to draw a map worth looking at, which is why
+         * this exists at all: the base map alone gives a coastline and a GPS position,
+         * and that is a usable thing to open on.
+         */
+        val any: Located? get() = bathymetry ?: basemap ?: seamarks
+
+        val all: List<Located> get() = listOfNotNull(bathymetry, basemap, seamarks)
     }
 
     /** Every directory the app is willing to read charts from, best first. */
@@ -93,8 +106,8 @@ object ChartArchive {
             PmtilesHeader.read(file)?.let { Located(file, file.parentFile ?: file, it) }
         }
 
-        fun pick(tileType: Int): Located? {
-            val ofKind = readable.filter { it.header.tileType == tileType }
+        fun pick(matches: (PmtilesHeader) -> Boolean): Located? {
+            val ofKind = readable.filter { matches(it.header) }
             return ofKind.firstOrNull { it.file.absolutePath == preferredPath }
                 ?: ofKind.minWithOrNull(
                     compareBy<Located> { it.header.synthetic }
@@ -102,13 +115,19 @@ object ChartArchive {
                 )
         }
 
+        // Buoyage and base map are both MVT, so the tile type cannot separate them; the
+        // layer names in the archive's own metadata can. An archive that declares
+        // neither is ignored rather than guessed at, because handing a base map to the
+        // seamark layer draws nothing at all and looks exactly like a missing file.
         val charts = Charts(
-            bathymetry = pick(PmtilesHeader.TILE_TYPE_PNG),
-            seamarks = pick(PmtilesHeader.TILE_TYPE_MVT),
+            bathymetry = pick { it.tileType == PmtilesHeader.TILE_TYPE_PNG },
+            basemap = pick { it.tileType == PmtilesHeader.TILE_TYPE_MVT && it.isBasemap },
+            seamarks = pick { it.tileType == PmtilesHeader.TILE_TYPE_MVT && it.isSeamarks },
         )
         Log.i(
             TAG,
-            "bathy=${charts.bathymetry?.file?.name} seamarks=${charts.seamarks?.file?.name}",
+            "bathy=${charts.bathymetry?.file?.name} base=${charts.basemap?.file?.name} " +
+                "seamarks=${charts.seamarks?.file?.name}",
         )
         return charts
     }
