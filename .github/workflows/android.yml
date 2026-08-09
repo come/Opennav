@@ -16,6 +16,7 @@ jobs:
   core:
     name: core tests (JVM)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +41,7 @@ jobs:
   pipeline:
     name: pipeline tests (Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +65,9 @@ jobs:
   android:
     name: APK
     runs-on: ubuntu-latest
+    # The MapLibre AAR alone is ~200 MB, so a cold cache is slow -- but not this slow.
+    # Without a cap a wedged runner sits on the default six-hour timeout.
+    timeout-minutes: 30
     # The `secrets` context is not available in a step-level `if`, so the keystore is
     # lifted into the job environment here and the steps test that instead.
     env:
