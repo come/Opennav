@@ -55,8 +55,11 @@ fun SettingsSheet(
     importing: Boolean,
     /** True while the bathymetry on screen is the fabricated demo, so it can be dropped. */
     canRemoveDemo: Boolean,
+    /** A stored report the user may want to send again after the dialog is gone. */
+    crashReportAvailable: Boolean,
     onImport: () -> Unit,
     onRemoveDemo: () -> Unit,
+    onShareCrashReport: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -151,6 +154,21 @@ fun SettingsSheet(
             Divider(Modifier.padding(vertical = 10.dp))
             Text("Légende", style = MaterialTheme.typography.titleMedium)
             LEGEND_BANDS.forEach { (label, argb) -> LegendRow(label, argb) }
+
+            if (crashReportAvailable) {
+                Divider(Modifier.padding(vertical = 10.dp))
+                Text("Diagnostic", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Un rapport de plantage est enregistré sur ce téléphone. Il contient " +
+                        "le modèle, la version d'Android et la pile d'appels — ni " +
+                        "position, ni identifiant.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onShareCrashReport) {
+                    Text("Partager le rapport de plantage")
+                }
+            }
 
             Divider(Modifier.padding(vertical = 10.dp))
             Text(

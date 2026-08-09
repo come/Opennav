@@ -71,6 +71,16 @@ object CrashLog {
         if (file.isFile && file.length() > 0) file.readText() else null
     }.getOrNull()
 
+    /**
+     * A stable identifier for one report, so the app can tell "seen" from "new".
+     *
+     * Showing the dialog whenever a report exists sounds right and is not: sharing does
+     * not delete the file, so the same crash reappeared at every launch, and a report
+     * that comes back after it has been dealt with reads as the crash happening again.
+     * That cost a round trip on a bug that had already been fixed.
+     */
+    fun identity(report: String): String = report.hashCode().toString()
+
     fun clear(context: Context) {
         runCatching { file(context).delete() }
     }

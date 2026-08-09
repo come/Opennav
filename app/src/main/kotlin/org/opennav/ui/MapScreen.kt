@@ -169,8 +169,23 @@ fun MapScreen(
     var sheet by remember { mutableStateOf<Sheet?>(null) }
 
     // Read once, at launch, from the file the uncaught-exception handler wrote. This is
-    // the only way a failure that happened on the water gets back to anyone.
-    var crashReport by remember { mutableStateOf(CrashLog.read(context)) }
+    // the only way a failure that happened on the water gets back to anyone -- but only
+    // if it has not already been shown, or a crash dealt with hours ago keeps announcing
+    // itself as if it had just happened.
+    var storedReport by remember { mutableStateOf(CrashLog.read(context)) }
+    var crashReport by remember {
+        mutableStateOf(
+            storedReport?.takeIf { CrashLog.identity(it) != settings.acknowledgedCrashId },
+        )
+    }
+
+    fun shareReport(report: String) {
+        runCatching {
+            context.startActivity(
+                Intent.createChooser(CrashLog.shareIntent(report), "Envoyer le rapport"),
+            )
+        }
+    }
 
     // --- side effects -----------------------------------------------------------
 
@@ -372,6 +387,8 @@ fun MapScreen(
             seamarkName = located.seamarks?.file?.name,
             importing = importing,
             canRemoveDemo = located.bathymetry?.header?.synthetic == true,
+            crashReportAvailable = storedReport != null,
+            onShareCrashReport = { storedReport?.let { shareReport(it) } },
             onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
             onRemoveDemo = {
                 scope.launch {
@@ -408,14 +425,17 @@ fun MapScreen(
         CrashReportDialog(
             report = report,
             onShare = {
-                runCatching {
-                    context.startActivity(
-                        Intent.createChooser(CrashLog.shareIntent(report), "Envoyer le rapport"),
-                    )
-                }
+                shareReport(report)
+                // Acknowledged, not deleted. The share sheet can be cancelled, and the
+                // settings screen can still send it afterwards; what must not happen is
+                // this dialog returning at every launch for a crash already reported.
+                settings.acknowledgedCrashId = CrashLog.identity(report)
+                crashReport = null
             },
             onDismiss = {
                 CrashLog.clear(context)
+                settings.acknowledgedCrashId = null
+                storedReport = null
                 crashReport = null
             },
         )

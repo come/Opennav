@@ -78,6 +78,17 @@ class BoatSettings(context: Context) {
         get() = prefs.getBoolean(KEY_SEEDED, false)
         set(value) = prefs.edit { putBoolean(KEY_SEEDED, value) }
 
+    /**
+     * Identity of the last crash report the user has already been shown.
+     *
+     * The report file outlives being shared -- deleting it on share would lose it if the
+     * share sheet were cancelled -- so "already seen" has to be recorded separately, or
+     * the dialog returns at every launch for a crash that was dealt with hours ago.
+     */
+    var acknowledgedCrashId: String?
+        get() = prefs.getString(KEY_CRASH_SEEN, null)
+        set(value) = prefs.edit { putString(KEY_CRASH_SEEN, value) }
+
     private companion object {
         const val KEY_NAME = "boat_name"
         const val KEY_DRAFT = "boat_draft_m"
@@ -87,6 +98,7 @@ class BoatSettings(context: Context) {
         const val KEY_DISCLAIMER = "disclaimer_accepted"
         const val KEY_CHART = "selected_chart_path"
         const val KEY_SEEDED = "bundled_chart_seeded"
+        const val KEY_CRASH_SEEN = "acknowledged_crash_id"
 
         const val DEFAULT_NAME = "Mon bateau"
         const val DEFAULT_DRAFT_M = 1.5f
