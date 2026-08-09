@@ -116,10 +116,30 @@ jobs:
           report=app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
           [ -f "$report" ] && cat "$report" || echo "no lint report produced"
 
-      - name: Build
-        run: ./gradlew :app:assembleDebug :app:assembleRelease
+      # Debug first, and uploaded before the release build starts. This is the APK you
+      # actually put on the phone while iterating, and R8 on the release variant is by
+      # far the slowest step in the workflow -- no reason to make the installable build
+      # wait behind it, or to lose it if it fails.
+      - name: Build the debug APK
+        run: ./gradlew :app:assembleDebug
 
-      - name: Report the APK signature
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opennav-apk-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Build the release APK
+        run: ./gradlew :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opennav-apk-release
+          path: app/build/outputs/apk/release/*.apk
+
+      # Both variants are signed with the same key on purpose, so either can replace the
+      # other on a phone. If these two fingerprints ever differ, that has broken.
+      - name: Report the APK signatures
+        if: always()
         run: |
           set -eu
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
@@ -127,11 +147,6 @@ jobs:
             echo "== $apk ($(du -h "$apk" | cut -f1))"
             "$BUILD_TOOLS/apksigner" verify --print-certs "$apk" | grep -i "SHA-256 digest" || true
           done
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: opennav-apk
-          path: app/build/outputs/apk/*/*.apk
 
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -120,8 +120,16 @@ Construit :
 * `:core:geo` — distances et caps, JVM pur, 10 tests (ajouté pour l'outil de mesure)
 * `:app` — carte plein écran, roue de paramètres, barre d'outils, GPS, mesure deux points
 * `tools/` — pipeline Litto3D → PMTiles, générateur d'échantillon, estimateur de volume,
-  17 tests dont un contrôle de parité entre les constantes Python et Kotlin
-* CI — tests JVM, tests Python, APK signé avec une clé stable
+  23 tests, dont un contrôle de parité entre les constantes Python et Kotlin et un
+  passage complet de `build_bathymetry.py` sur un raster Lambert-93 synthétique
+* CI — tests JVM, tests Python (rasterio inclus), APK signé avec une clé stable
+
+Le test du pipeline GDAL vérifie précisément les choses qui seraient dangereuses à rater :
+que le décalage vertical demandé arrive bien dans les pixels (min −33,3 m et max +4,6 m
+pour une source de −36,95 à +0,95 avec un décalage de 3,64 m), que la quantification
+remonte le fond, que les trous restent des trous, et qu'un zoom d'ensemble n'est jamais
+plus profond que le zoom natif — c'est ce dernier point qui casserait en premier si
+quelqu'un remettait `min` à la place de `max`.
 
 Volontairement **pas** construit, pour ne pas préempter les phases suivantes :
 `:core:tide` (moteur harmonique), `:data:persistence` (Room), `:feature:anchor`,

@@ -40,7 +40,7 @@ non levé.
 # 1. Une carte d'essai (15 s, bibliothèque standard uniquement)
 ./tools/make_sample_pmtiles.py --out sample.pmtiles
 
-# 2. L'APK — ou récupérez l'artefact de la CI
+# 2. L'APK — ou récupérez l'artefact `opennav-apk-debug` de la CI
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
