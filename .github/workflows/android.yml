@@ -49,8 +49,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      # The encoder, the PMTiles writer and the sample generator only need the standard
-      # library; rasterio is just for build_bathymetry.py, which these tests do not run.
+      # The encoder, the PMTiles writer and the sample generator need only the standard
+      # library. rasterio is installed so that the GDAL pipeline tests run too -- that is
+      # the script where a sign error would quietly make every depth optimistic, so it is
+      # worth the thirty seconds.
+      - name: Install the pipeline dependencies
+        run: pip install -r tools/requirements.txt
+
       - name: Tests
         run: python3 -m unittest discover -s tools -v
 

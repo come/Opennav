@@ -96,9 +96,42 @@ class SourceMosaic:
                 raise ValueError(f"{path} has no CRS; Litto3D tiles must declare EPSG:2154")
         self.bounds_3857 = self._union_bounds()
 
+        # One WarpedVRT per (dataset, zoom), built on demand and kept. Building one per
+        # tile made the reprojection setup dominate the run.
+        self._vrts: dict[tuple[int, int], list] = {}
+
     def close(self) -> None:
+        for vrts in self._vrts.values():
+            for vrt in vrts:
+                vrt.close()
+        self._vrts.clear()
         for ds in self._datasets:
             ds.close()
+
+    def _vrts_for(self, zoom: int, tile_size: int) -> list:
+        cached = self._vrts.get((zoom, tile_size))
+        if cached is not None:
+            return cached
+        transform, side = zoom_transform(zoom, tile_size)
+        vrts = []
+        for ds in self._datasets:
+            nodata = self.src_nodata if self.src_nodata is not None else ds.nodata
+            vrts.append(
+                WarpedVRT(
+                    ds,
+                    crs=WEB_MERCATOR,
+                    transform=transform,
+                    width=side,
+                    height=side,
+                    # `max` on elevation == shallowest sample in the cell. See the module
+                    # docstring; do not "fix" this to `min`.
+                    resampling=Resampling.max,
+                    src_nodata=nodata,
+                    nodata=nodata,
+                )
+            )
+        self._vrts[(zoom, tile_size)] = vrts
+        return vrts
 
     def _union_bounds(self) -> tuple[float, float, float, float]:
         from rasterio.warp import transform_bounds
@@ -117,30 +150,26 @@ class SourceMosaic:
 
         Returns a masked array: masked cells are the ones the survey does not cover.
         """
-        transform, side = zoom_transform(zoom, tile_size)
-        window = Window(x * tile_size, y * tile_size, tile_size, tile_size)
+        _, side = zoom_transform(zoom, tile_size)
+        col_off, row_off = x * tile_size, y * tile_size
+
+        # A WarpedVRT refuses boundless reads, and the tiles at the edge of the archive
+        # necessarily hang off the side of the source. Clip the window, read what exists,
+        # and leave the rest masked -- masked meaning "not surveyed", which is exactly
+        # what a tile that runs past the edge of the survey is.
+        c0, r0 = max(0, col_off), max(0, row_off)
+        c1, r1 = min(side, col_off + tile_size), min(side, row_off + tile_size)
+        if c1 <= c0 or r1 <= r0:
+            return None
+        window = Window(c0, r0, c1 - c0, r1 - r0)
 
         stack = None
-        for ds in self._datasets:
-            nodata = self.src_nodata if self.src_nodata is not None else ds.nodata
-            with WarpedVRT(
-                ds,
-                crs=WEB_MERCATOR,
-                transform=transform,
-                width=side,
-                height=side,
-                # `max` on elevation == shallowest sample in the cell. See the module
-                # docstring; do not "fix" this to `min`.
-                resampling=Resampling.max,
-                src_nodata=nodata,
-                nodata=nodata,
-            ) as vrt:
-                data = vrt.read(
-                    1, window=window, boundless=True, masked=True,
-                    fill_value=nodata if nodata is not None else 0,
-                )
-            if data.mask.all():
+        for vrt in self._vrts_for(zoom, tile_size):
+            chunk = vrt.read(1, window=window, masked=True)
+            if np.ma.getmaskarray(chunk).all():
                 continue
+            data = np.ma.masked_all((tile_size, tile_size), dtype="float64")
+            data[r0 - row_off:r1 - row_off, c0 - col_off:c1 - col_off] = chunk
             stack = data if stack is None else np.ma.maximum(stack, data)
         return stack
 

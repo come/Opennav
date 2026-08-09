@@ -243,6 +243,119 @@ class SampleArchiveTest(unittest.TestCase):
         self.assertLess(len(surveyed), len(elevations), "expected a no-data hole")
 
 
+try:
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+    HAS_RASTERIO = True
+except ImportError:  # pragma: no cover
+    HAS_RASTERIO = False
+
+
+@unittest.skipUnless(HAS_RASTERIO, "rasterio not installed; skipping the GDAL pipeline")
+class BuildBathymetryTest(unittest.TestCase):
+    """Drives build_bathymetry.py over a synthetic Lambert-93 raster.
+
+    Litto3D itself needs a SHOM account, but the parts of the pipeline that can be wrong
+    in a dangerous way -- the vertical shift, the choice of resampling, and what happens
+    to a data hole -- do not care whether the seabed underneath them is real.
+    """
+
+    SOURCE_MIN_M = -36.95   # -4 - 0.05 * 599 - 3, before any datum shift
+    SOURCE_MAX_M = 0.95     # excluding the hole
+    DATUM_SHIFT_M = 3.64
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.source = os.path.join(cls._tmp.name, "litto3d.tif")
+        cls.archive = os.path.join(cls._tmp.name, "out.pmtiles")
+
+        w = h = 600
+        yy, xx = np.mgrid[0:h, 0:w].astype("float64")
+        elevation = -4.0 - 0.05 * yy + 3.0 * np.sin(xx / 40.0)
+        elevation += 14.0 * np.exp(-(((xx - 380) / 35.0) ** 2 + ((yy - 180) / 35.0) ** 2))
+        cls.hole = ((xx - 150) ** 2 + (yy - 420) ** 2) < 70 ** 2
+        elevation[cls.hole] = -9999.0
+
+        with rasterio.open(
+            cls.source, "w", driver="GTiff", width=w, height=h, count=1,
+            dtype="float32", crs="EPSG:2154", nodata=-9999.0,
+            transform=from_origin(145000.0, 6838000.0, 5.0, 5.0),
+        ) as dst:
+            dst.write(elevation.astype("float32"), 1)
+
+        subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "tools", "build_bathymetry.py"),
+             "--input", cls.source, "--out", cls.archive,
+             "--datum-shift", str(cls.DATUM_SHIFT_M),
+             "--min-zoom", "14", "--max-zoom", "16", "--area-name", "unit test"],
+            check=True, capture_output=True,
+        )
+        cls.reader = PMTilesReader(cls.archive)
+        cls.elevations = cls._read_all(16)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    @classmethod
+    def _read_all(cls, zoom: int) -> list[float]:
+        x0, y0, x1, y1 = tiles.tile_range(cls.reader.bounds, zoom, tiles.TILE_SIZE)
+        out: list[float] = []
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                blob = cls.reader.get(zoom, x, y)
+                if blob:
+                    out += _decode_terrain_png(blob)
+        return out
+
+    def test_records_what_it_did(self):
+        meta = self.reader.metadata
+        self.assertEqual("mapbox", meta["encoding"])
+        self.assertEqual(self.DATUM_SHIFT_M, meta["vertical_shift_applied_m"])
+        self.assertIn("max on elevation", meta["resampling"])
+        self.assertIn("Shom", meta["attribution"])
+
+    def test_applies_the_vertical_shift(self):
+        # A silent default here would be a systematic error on every depth in the app,
+        # so it is worth asserting that the requested shift actually landed.
+        surveyed = [e for e in self.elevations if not terrain_rgb.is_no_data(e)]
+        self.assertAlmostEqual(self.SOURCE_MIN_M + self.DATUM_SHIFT_M, min(surveyed), delta=0.15)
+        self.assertAlmostEqual(self.SOURCE_MAX_M + self.DATUM_SHIFT_M, max(surveyed), delta=0.15)
+
+    def test_quantisation_stays_pessimistic(self):
+        # 0.9515 + 3.64 = 4.5915, which must encode UP to 4.6, never down to 4.5.
+        surveyed = [e for e in self.elevations if not terrain_rgb.is_no_data(e)]
+        self.assertGreaterEqual(max(surveyed), self.SOURCE_MAX_M + self.DATUM_SHIFT_M)
+
+    def test_holes_stay_holes(self):
+        # Both the lidar hole and everything outside the survey must read as no-data,
+        # never as an interpolated depth.
+        missing = [e for e in self.elevations if terrain_rgb.is_no_data(e)]
+        self.assertGreater(len(missing), 0)
+        self.assertTrue(all(e == terrain_rgb.NO_DATA_ELEVATION_M for e in missing))
+        self.assertLess(len(missing), len(self.elevations))
+
+    def test_overviews_are_no_deeper_than_the_native_zoom(self):
+        # "Shallowest sample in the cell" means a coarser zoom can only ever move the
+        # seabed up. If this fails, the resampling has been flipped back to `min`.
+        coarse = [e for e in self._read_all(14) if not terrain_rgb.is_no_data(e)]
+        fine = [e for e in self.elevations if not terrain_rgb.is_no_data(e)]
+        self.assertGreater(len(coarse), 0)
+        self.assertGreaterEqual(max(coarse), max(fine) - 0.2)
+        self.assertGreaterEqual(min(coarse), min(fine) - 0.2)
+
+    def test_refuses_to_guess_the_vertical_datum(self):
+        result = subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "tools", "build_bathymetry.py"),
+             "--input", self.source, "--out", os.path.join(self._tmp.name, "nope.pmtiles")],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("datum", result.stderr.lower())
+
+
 def _decode_terrain_png(blob: bytes) -> list[float]:
     pos = 8
     idat = b""
