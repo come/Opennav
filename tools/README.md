@@ -65,10 +65,18 @@ pas en coordonnées : ils suivent. Les profondeurs, elles, restent en mètres �
 l'emprise agrandit le chenal, ne le creuse pas. C'est ce qui permet de poser un fond
 factice sous un vrai balisage OpenSeaMap en attendant les dalles Litto3D.
 
+### Les cartes versionnées dans l'APK
+
+Trois `.pmtiles` sont committés, tous dans `app/src/main/assets/` (le `.gitignore` ignore
+tout le reste). Deux sont la carte par défaut sur laquelle l'app s'ouvre — `bretagne-base`
+et `bretagne-seamarks`, régénérées par `build_area.py --area bretagne --osm …` (voir le
+[README principal](../README.md#le-fond-de-carte-et-le-balisage-openstreetmap)). Le
+troisième est la démonstration synthétique ci-dessous. `test_tools.py` relit les trois et
+échoue si l'un ne contient pas ce que le dépôt en dit.
+
 ### Régénérer la carte de démonstration embarquée
 
-`app/src/main/assets/demo-quiberon-synthetic.pmtiles` est le seul `.pmtiles` versionné du
-dépôt. Il est produit par :
+`app/src/main/assets/demo-quiberon-synthetic.pmtiles` est produit par :
 
 ```bash
 ./tools/make_sample_pmtiles.py \

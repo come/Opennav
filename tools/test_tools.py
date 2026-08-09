@@ -476,7 +476,7 @@ class AndroidXmlTest(unittest.TestCase):
 
 
 class BundledDemoTest(unittest.TestCase):
-    """The demo shipped inside the APK is the only `.pmtiles` in git, so it is reviewed.
+    """The demo shipped inside the APK is committed to git, so it is reviewed like the rest.
 
     A committed binary is the one artefact nobody re-reads. This decodes it, the same way
     the phone will, and fails if what comes out is not the chart the README describes --
@@ -532,6 +532,86 @@ class BundledDemoTest(unittest.TestCase):
         self.assertLess(min(surveyed), -25.0, "expected the dredged channel")
         self.assertGreater(max(surveyed), 1.0, "expected something that dries")
         self.assertLess(len(surveyed), len(elevations), "expected the unsurveyed hole")
+
+
+class BundledDefaultsTest(unittest.TestCase):
+    """The real charts shipped in the APK -- the map the app opens on -- reviewed like the demo.
+
+    They are committed binaries, so nobody re-reads them. This decodes their headers and
+    metadata the way the phone will, and fails if what comes out is not what ChartArchive
+    is about to render: bounds outside the built area put the buoyage over blank water, a
+    synthetic flag would raise the fictitious-chart banner over real data, and a missing
+    layer id makes `locate()` hand the archive to the wrong renderer and draw nothing.
+    """
+
+    ASSETS = os.path.join(REPO_ROOT, "app", "src", "main", "assets")
+    KOTLIN_CHART_ARCHIVE = os.path.join(
+        REPO_ROOT, "app", "src", "main", "kotlin", "org", "opennav", "chart",
+        "ChartArchive.kt",
+    )
+    # The clip the charts were built with; the data extent must sit inside it.
+    _, CLIP = build_area.AREAS["bretagne"]
+    # The layer ids locate() keys on, kept in sync with PmtilesHeader in the app.
+    BASEMAP_LAYERS = {"land", "water", "harbour", "coastline", "structure", "place"}
+    SEAMARK_LAYER = "seamarks"
+
+    def _names_in_kotlin(self) -> list[str]:
+        with open(self.KOTLIN_CHART_ARCHIVE, encoding="utf-8") as fh:
+            match = re.search(r"BUNDLED_DEFAULTS\s*=\s*listOf\(([^)]*)\)", fh.read())
+        self.assertIsNotNone(match, "BUNDLED_DEFAULTS not found in ChartArchive.kt")
+        return re.findall(r'"([^"]+)"', match.group(1))
+
+    def _layers(self, reader: PMTilesReader) -> set[str]:
+        return {layer["id"] for layer in reader.metadata.get("vector_layers", [])}
+
+    def _assert_real_mvt(self, reader: PMTilesReader) -> None:
+        self.assertEqual(1, reader.tile_type, "vector tiles are MVT")
+        self.assertFalse(
+            reader.metadata.get("synthetic", False),
+            "a real chart must not raise the fictitious-chart banner",
+        )
+        self.assertGreater(reader.addressed_tiles, 500, "archive is suspiciously empty")
+
+    def _assert_inside_clip(self, reader: PMTilesReader) -> None:
+        min_lon, min_lat, max_lon, max_lat = reader.bounds
+        cmin_lon, cmin_lat, cmax_lon, cmax_lat = self.CLIP
+        eps = 1e-6
+        self.assertGreaterEqual(min_lon, cmin_lon - eps)
+        self.assertGreaterEqual(min_lat, cmin_lat - eps)
+        self.assertLessEqual(max_lon, cmax_lon + eps)
+        self.assertLessEqual(max_lat, cmax_lat + eps)
+        # ...and actually the size of Brittany, not a fragment left by a truncated extract.
+        self.assertGreater(max_lon - min_lon, 3.0, "too narrow to be Brittany")
+        self.assertGreater(max_lat - min_lat, 1.5, "too short to be Brittany")
+
+    def test_the_app_unpacks_the_files_that_are_actually_there(self):
+        names = set(self._names_in_kotlin())
+        self.assertEqual(
+            {"bretagne-base.pmtiles", "bretagne-seamarks.pmtiles"}, names,
+            "BUNDLED_DEFAULTS and the committed assets have drifted apart",
+        )
+        for name in names:
+            self.assertTrue(
+                os.path.isfile(os.path.join(self.ASSETS, name)),
+                f"{name} is listed in ChartArchive but missing from assets/",
+            )
+
+    def test_base_map_is_a_real_osm_coastline(self):
+        reader = PMTilesReader(os.path.join(self.ASSETS, "bretagne-base.pmtiles"))
+        self._assert_real_mvt(reader)
+        self._assert_inside_clip(reader)
+        self.assertTrue(
+            self._layers(reader) & self.BASEMAP_LAYERS,
+            "base map declares none of the layers locate() looks for",
+        )
+        self.assertIn("OpenStreetMap", reader.metadata.get("attribution", ""))
+
+    def test_seamarks_are_the_real_openseamap_buoyage(self):
+        reader = PMTilesReader(os.path.join(self.ASSETS, "bretagne-seamarks.pmtiles"))
+        self._assert_real_mvt(reader)
+        self._assert_inside_clip(reader)
+        self.assertIn(self.SEAMARK_LAYER, self._layers(reader))
+        self.assertIn("OpenSeaMap", reader.metadata.get("attribution", ""))
 
 
 class SampleArchiveTest(unittest.TestCase):

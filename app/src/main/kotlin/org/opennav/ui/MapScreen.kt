@@ -70,39 +70,57 @@ fun MapScreen(
     val header = remember(located) { located.bathymetry?.header ?: located.seamarks?.header }
     var importing by remember { mutableStateOf(false) }
 
-    // True for the second or so of the very first launch, while the demo chart is copied
-    // out of the APK. Decided synchronously here rather than inside the effect, so the
-    // empty state never flashes up before the map it is about to be replaced by.
+    // True for the second or so of the very first launch, while the bundled charts are
+    // copied out of the APK. Decided synchronously here rather than inside the effect, so
+    // the empty state never flashes up before the map it is about to be replaced by. Keyed
+    // on `any`, not on the bathymetry: the default map is a base map and a buoyage, with no
+    // depths, so waiting for a depth archive would spin forever.
     var unpacking by remember {
-        mutableStateOf(located.bathymetry == null && !settings.bundledChartSeeded)
+        mutableStateOf(located.any == null && !settings.bundledChartSeeded)
     }
     val demoAvailable = remember { ChartArchive.hasBundled(context) }
 
     /**
-     * Unpacks the demo out of the APK and displays it.
+     * Unpacks the bundled Brittany charts out of the APK and displays them.
      *
-     * Marked as done whether or not it worked. A build without the asset, or a phone with
+     * Marked as done whether or not it worked. A build without the assets, or a phone with
      * no room left, would otherwise retry on every launch and delay every one of them;
-     * the empty state keeps offering the button, which is the right place for a retry.
+     * the empty state keeps offering both a retry-the-demo button and an import, which is
+     * the right place for it.
+     */
+    suspend fun installDefaults() {
+        unpacking = true
+        withContext(Dispatchers.IO) { ChartArchive.seedDefaults(context) }
+        settings.bundledChartSeeded = true
+        unpacking = false
+        // Deliberately not recorded as the selected chart: the bundled charts are a
+        // starting point, and the first real survey imported over them has to win without
+        // the user having to say so twice.
+        located = ChartArchive.locate(context, settings.selectedChartPath)
+        error = null
+    }
+
+    /**
+     * Unpacks the synthetic demo on demand, for the "restore the demo" button.
+     *
+     * Its invented seabed is the only thing in the build that exercises the depth colours
+     * without a SHOM account, so it stays reachable even though it is no longer what the
+     * app opens on.
      */
     suspend fun installDemo() {
         unpacking = true
         val seeded = withContext(Dispatchers.IO) { ChartArchive.seedBundled(context) }
-        settings.bundledChartSeeded = true
         unpacking = false
         if (seeded == null) {
             error = "Carte de démonstration indisponible dans cette version."
             return
         }
-        // Deliberately not recorded as the selected chart: the demo is a placeholder, and
-        // the first real survey imported over it has to win without the user having to
-        // say so twice.
         located = ChartArchive.locate(context, settings.selectedChartPath)
         error = null
     }
 
     LaunchedEffect(Unit) {
-        if (unpacking) installDemo()
+        if (unpacking) installDefaults()
     }
 
     // The system picker, so a chart can be installed from the phone itself rather than
@@ -448,7 +466,7 @@ private fun NoChartInstalled(
     if (unpacking) {
         Box(modifier, contentAlignment = Alignment.Center) {
             Text(
-                "Préparation de la carte de démonstration…",
+                "Préparation de la carte…",
                 style = MaterialTheme.typography.bodyLarge,
             )
         }

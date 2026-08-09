@@ -23,7 +23,7 @@ through to the tiles; the app maps them to symbols. That separation matters: OSM
 data is contributed, uneven, and sometimes wrong, and the honest place to say so is the
 app's Sources screen, not a silent filter in a build script.
 
-Requires `osmium` (see tools/requirements.txt).
+Requires `osmium` (see tools/requirements-dev.txt).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ try:
     import osmium
 except ImportError as exc:  # pragma: no cover - exercised only on a bare machine
     raise SystemExit(
-        f"missing dependency ({exc}); install with: pip install -r tools/requirements.txt"
+        f"missing dependency ({exc}); install with: pip install -r tools/requirements-dev.txt"
     ) from exc
 
 #: PMTiles header value for Mapbox Vector Tiles.

@@ -33,7 +33,7 @@ land where there is sea. On a navigation chart that is the one error that must n
 made quietly, so the mainland is drawn as a coastline stroke with land left unfilled.
 Islands are safe because their rings are already closed in the data.
 
-Requires `osmium` (see tools/requirements.txt).
+Requires `osmium` (see tools/requirements-dev.txt).
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ try:
     import osmium
 except ImportError as exc:  # pragma: no cover - exercised only on a bare machine
     raise SystemExit(
-        f"missing dependency ({exc}); install with: pip install -r tools/requirements.txt"
+        f"missing dependency ({exc}); install with: pip install -r tools/requirements-dev.txt"
     ) from exc
 
 #: PMTiles header value for Mapbox Vector Tiles.

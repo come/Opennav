@@ -32,24 +32,24 @@ Reste à faire tourner l'APK sur un vrai téléphone pour remplir les deux derni
 
 ## Essayer
 
-Installez l'APK, ouvrez-le : il y a une carte. **Elle est fausse.**
+Installez l'APK, ouvrez-le : il y a une carte de la Bretagne — trait de côte et balisage
+OpenSeaMap réels, entièrement hors-ligne. **Mais pas de profondeurs.**
 
-L'app embarque une carte de démonstration couvrant la baie de Quiberon, Houat, Hoëdic et
-le golfe du Morbihan — 4,4 Mo dépaquetés au premier lancement. Le trait de côte est réel
-(c'est celui de la projection), le fond marin est inventé de bout en bout : un chenal
-rectiligne à −34 m, un haut-fond circulaire qui découvre à +1,4 m, un trou circulaire sans
-donnée. Trois figures géométriques, choisies pour être reconnaissables comme telles à tous
-les zooms. Un bandeau rouge permanent le dit tant qu'elle est affichée, et l'écran Sources
-refuse de créditer le SHOM pour elle.
+L'app embarque deux cartes réelles, dépaquetées au premier lancement : le fond de carte
+OSM de la Bretagne (côte, îles, ports) et le balisage OpenSeaMap (bouées, phares, épaves),
+~10 Mo au total, vectoriels. C'est de la vraie donnée — mais un fond de carte n'est pas un
+levé. Il n'y a aucune bathymétrie tant que vous n'importez pas un relevé Litto3D, et un
+bandeau le dit : le cœur du produit, la couleur qui répond à « assez d'eau ? », n'a rien à
+colorier avant ça.
 
-Elle existe pour deux raisons : arriver sur un écran vide n'apprend rien, et les trois
-objets qu'elle contient sont exactement ceux qu'il faut pour vérifier la colorisation.
-Balayez le slider « Hauteur d'eau simulée » : le haut-fond doit passer du bleu au jaune, à
-l'orange, au rouge, et le trou doit rester violet quoi qu'il arrive.
-
-La première vraie carte importée la remplace automatiquement — à taille égale, un levé
-passe devant une démonstration. Supprimez-la si elle gêne : l'app ne la remettra pas
-d'elle-même, et un bouton dans l'écran vide permet de la faire revenir.
+Pour vérifier cette colorisation sans compte SHOM, un fond marin **factice** reste
+embarqué : roue ⚙ → Carte → « Remettre la carte de démonstration ». Il pose, sous la baie
+de Quiberon, un chenal rectiligne à −34 m, un haut-fond circulaire qui découvre à +1,4 m et
+un trou sans donnée — trois figures reconnaissables comme telles à tous les zooms, sous un
+bandeau rouge permanent, et l'écran Sources refuse de créditer le SHOM pour elle. Balayez
+le slider « Hauteur d'eau simulée » : le haut-fond doit passer du bleu au jaune, à l'orange,
+au rouge, et le trou rester violet quoi qu'il arrive. Le premier vrai levé importé passe
+devant — à taille égale, un relevé bat une démonstration.
 
 ```bash
 # L'APK — ou récupérez l'artefact `opennav-apk-debug` de la CI
@@ -92,6 +92,11 @@ Deux fichiers sortent — `bretagne-base.pmtiles` et `bretagne-seamarks.pmtiles`
 importer l'un après l'autre (roue ⚙ → Carte → Importer une carte). Ils sont séparés parce
 qu'ils ne changent pas au même rythme, et parce qu'on peut vouloir l'un sans attendre
 l'autre.
+
+Ces deux-là sont aussi ceux que l'APK embarque par défaut (voir « Essayer ») : pour les
+mettre à jour, régénérez-les avec la commande ci-dessus et recopiez-les dans
+`app/src/main/assets/`. Pour une autre zone, changez `--area` — la carte embarquée reste la
+Bretagne.
 
 Le fond de carte porte six couches : trait de côte, îles, eau intérieure, ports et
 marinas, jetées et brise-lames, et les lieux habités. **Le continent n'est pas rempli,

@@ -47,6 +47,22 @@ object ChartArchive {
      */
     const val BUNDLED_ASSET = "demo-quiberon-synthetic.pmtiles"
 
+    /**
+     * The real charts shipped inside the APK, unpacked on first launch.
+     *
+     * Unlike [BUNDLED_ASSET], these are *not* fiction: an OSM base map and the OpenSeaMap
+     * buoyage for the whole of Brittany, built by `tools/build_basemap.py` and
+     * `tools/build_seamarks.py`. They are what the app opens on -- a real coastline and a
+     * real set of marks -- so the first launch shows the actual product rather than an
+     * invented seabed. Depths are deliberately absent: bathymetry is a survey the user
+     * imports, and a made-up one under this would read as data.
+     *
+     * Both are vector and small (a base map of a region weighs single-digit megabytes),
+     * which is why they can be committed as assets at all where a real bathymetry survey,
+     * hundreds of megabytes, never could.
+     */
+    val BUNDLED_DEFAULTS = listOf("bretagne-base.pmtiles", "bretagne-seamarks.pmtiles")
+
     private const val TAG = "ChartArchive"
     private const val STAGING_SUFFIX = ".part"
     private const val COPY_BUFFER_BYTES = 1 shl 16
@@ -180,6 +196,37 @@ object ChartArchive {
             install(context, input, BUNDLED_ASSET)
         }
     }.onFailure { Log.w(TAG, "could not unpack the bundled demo", it) }.getOrNull()
+
+    /**
+     * Unpacks the bundled Brittany charts on first launch, so the app opens on a real map.
+     *
+     * The counterpart to [seedBundled] for [BUNDLED_DEFAULTS]: same copy-out-of-the-APK
+     * path an imported chart takes, one file at a time so a build shipping only some of
+     * them still installs what it has. Each is skipped when already present, so this is
+     * cheap to call again and a chart the user deleted is not resurrected -- the caller
+     * still records that the seeding ran, exactly as for the demo.
+     *
+     * Returns the files it actually installed this time, which the caller uses only to
+     * decide whether re-locating is worthwhile; an empty list means everything was already
+     * there, or the assets are missing from this build, and neither interrupts a launch.
+     *
+     * Caller's job to keep this off the main thread.
+     */
+    fun seedDefaults(context: Context): List<File> = BUNDLED_DEFAULTS.mapNotNull { name ->
+        runCatching {
+            val existing = File(preferredDirectory(context), name)
+            if (existing.isFile && PmtilesHeader.read(existing) != null) {
+                Log.i(TAG, "$name already installed")
+                return@runCatching null
+            }
+            context.assets.open(name).use { input -> install(context, input, name) }
+        }.onFailure { Log.w(TAG, "could not unpack bundled $name", it) }.getOrNull()
+    }
+
+    /** Whether this build carries the default charts, so first launch has something to seed. */
+    fun hasDefaults(context: Context): Boolean = BUNDLED_DEFAULTS.any { name ->
+        runCatching { context.assets.open(name).close() }.isSuccess
+    }
 
     /**
      * Deletes the unpacked demo. Returns true if a file was actually removed.
