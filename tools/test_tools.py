@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+from xml.etree import ElementTree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -263,6 +264,38 @@ class SyntheticSeabedTest(unittest.TestCase):
     def test_refuses_an_inverted_window(self):
         with self.assertRaises(ValueError):
             make_sample_pmtiles.Seabed((-2.0, 48.0, -3.0, 47.0))
+
+
+class AndroidXmlTest(unittest.TestCase):
+    """Every XML the Android build reads must parse.
+
+    Here rather than in Gradle because it costs milliseconds and catches the failure
+    fifteen minutes earlier. A malformed manifest stops the build at
+    `processDebugMainManifest` with `Error parsing AndroidManifest.xml` and no line
+    number, after the whole toolchain has been downloaded -- and the thing it will not
+    say is that a double hyphen inside an XML comment is illegal, which is the way this
+    file has actually been broken.
+    """
+
+    def test_every_xml_resource_is_well_formed(self):
+        roots = [
+            os.path.join(REPO_ROOT, "app", "src", "main", "AndroidManifest.xml"),
+            os.path.join(REPO_ROOT, "app", "src", "main", "res"),
+        ]
+        files: list[str] = []
+        for root in roots:
+            if os.path.isfile(root):
+                files.append(root)
+            for directory, _, names in os.walk(root):
+                files += [os.path.join(directory, n) for n in names if n.endswith(".xml")]
+
+        self.assertGreater(len(files), 1, "expected to find some Android XML")
+        for path in files:
+            with self.subTest(os.path.relpath(path, REPO_ROOT)):
+                try:
+                    ElementTree.parse(path)
+                except ElementTree.ParseError as error:
+                    self.fail(f"{os.path.relpath(path, REPO_ROOT)}: {error}")
 
 
 class BundledDemoTest(unittest.TestCase):
