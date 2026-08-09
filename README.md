@@ -64,6 +64,33 @@ Pour fabriquer une autre zone factice (sous un vrai balisage OpenSeaMap, par exe
 adb push essai.pmtiles /sdcard/Android/data/org.opennav/files/charts/
 ```
 
+## Si l'app s'arrête
+
+Elle enregistre la pile d'appels et vous la montre au lancement suivant, avec un bouton
+**Partager** qui la sort du téléphone en texte brut par n'importe quelle appli déjà
+installée (aucune permission réseau n'entre en jeu : c'est l'appli réceptrice qui envoie).
+Le rapport contient le modèle, la version d'Android et la pile — ni position, ni
+identifiant.
+
+Sans réseau ni service de crash, c'est le seul chemin de retour d'une panne survenue au
+mouillage. Si le moteur de carte lui-même refuse de démarrer, l'app s'ouvre quand même et
+le dit, au lieu de disparaître.
+
+## Balisage seul, sans bathymétrie
+
+Un fichier de balisage suffit à afficher une carte : bouées, feux, épaves d'OpenSeaMap,
+plus votre position GPS. Un bandeau ambre rappelle qu'il n'y a **aucune profondeur** —
+donc aucune alerte de haut-fond — et le curseur de hauteur d'eau disparaît, parce qu'un
+réglage qui ne change rien à l'écran se lit comme un réglage pris en compte.
+
+```bash
+./tools/build_area.py --area morbihan --osm bretagne-latest.osm.pbf
+# puis, dans l'app : roue → Carte → Importer une carte
+```
+
+Construire la bathymétrie Litto3D prend une soirée ; le balisage prend quelques minutes.
+Faire attendre le second après le premier n'avait aucune raison d'être.
+
 ## Obtenir la bathymétrie de la Bretagne
 
 **Il n'existe pas de carte Bretagne à télécharger.** Le dépôt ne contient aucune donnée

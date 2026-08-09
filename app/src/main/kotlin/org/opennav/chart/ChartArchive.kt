@@ -162,6 +162,21 @@ object ChartArchive {
         }
     }.onFailure { Log.w(TAG, "could not unpack the bundled demo", it) }.getOrNull()
 
+    /**
+     * Deletes the unpacked demo. Returns true if a file was actually removed.
+     *
+     * Wanting it gone is a normal thing to want -- once a real buoyage layer is installed,
+     * an invented seabed under it is worse than no seabed at all, because the colours read
+     * as information. The caller records that it was unpacked once, so this does not come
+     * back at the next launch.
+     */
+    fun removeBundled(context: Context): Boolean {
+        val file = File(preferredDirectory(context), BUNDLED_ASSET)
+        val removed = file.isFile && file.delete()
+        Log.i(TAG, "demo removal requested: removed=$removed")
+        return removed
+    }
+
     /** Whether this build actually carries the demo, so the UI can stop offering it. */
     fun hasBundled(context: Context): Boolean =
         runCatching { context.assets.open(BUNDLED_ASSET).close() }.isSuccess

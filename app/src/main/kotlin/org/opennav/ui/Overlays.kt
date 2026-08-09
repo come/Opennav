@@ -82,6 +82,27 @@ fun SyntheticChartBanner(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * Buoyage without depths.
+ *
+ * Amber, not red: nothing on screen is wrong, there is simply less of it than the app is
+ * for. The danger is the opposite of the fictitious-chart one -- there, colours mean
+ * nothing; here, the absence of colour means nothing either, and a mariner used to
+ * reading blue for water has to be told that this map has no opinion about the water.
+ */
+@Composable
+fun NoBathymetryBanner(modifier: Modifier = Modifier) {
+    Text(
+        text = "BALISAGE SEUL — aucune profondeur, aucune alerte de haut-fond",
+        style = MaterialTheme.typography.labelMedium,
+        color = Color(0xFF201800),
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .background(Color(0xE6F0C828))
+            .padding(vertical = 5.dp, horizontal = 8.dp),
+    )
+}
+
 @Composable
 fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     FilledIconButton(

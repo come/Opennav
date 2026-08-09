@@ -55,8 +55,17 @@ object DepthLayers {
     /** Colour behind everything: not blue, so "no tile here" cannot read as water. */
     private const val BACKGROUND_ARGB = 0xFF1A1A1E.toInt()
 
+    /**
+     * @param archive Terrain-RGB bathymetry, or null to draw everything else without it.
+     *
+     * Null is a real case, not a degraded one. Buoyage plus a GPS position is already a
+     * usable thing to look at, and it is the only thing available before a Litto3D zone
+     * has been built -- which takes an evening. Refusing to draw a map until the depths
+     * exist meant the buoyage a user had just spent time building could not be seen at
+     * all.
+     */
     fun styleBuilder(
-        archive: File,
+        archive: File?,
         seamarks: File?,
         boat: BoatProfile,
         tideHeightMeters: Double,
@@ -64,15 +73,6 @@ object DepthLayers {
     ): Style.Builder {
         val background = org.maplibre.android.style.layers.BackgroundLayer(LAYER_BACKGROUND)
             .withProperties(PropertyFactory.backgroundColor(BACKGROUND_ARGB))
-
-        val depth = ColorReliefLayer(LAYER_DEPTH, SOURCE_BATHY).apply {
-            setProperties(
-                PropertyFactory.colorReliefColor(
-                    colorRamp(boat, tideHeightMeters, deepRangeMeters),
-                ),
-                PropertyFactory.colorReliefOpacity(1.0f),
-            )
-        }
 
         val routeLine = LineLayer(LAYER_ROUTE_LINE, SOURCE_ROUTE).withProperties(
             PropertyFactory.lineColor(0xFFFFFFFF.toInt()),
@@ -94,11 +94,25 @@ object DepthLayers {
 
         val builder = Style.Builder()
             .fromJson(EMPTY_STYLE)
-            .withSource(RasterDemSource(SOURCE_BATHY, ChartArchive.sourceUri(archive), TILE_SIZE))
             .withSource(GeoJsonSource(SOURCE_ROUTE, emptyFeatureCollection()))
             .withSource(GeoJsonSource(SOURCE_POSITION, emptyFeatureCollection()))
             .withLayer(background)
-            .withLayer(depth)
+
+        if (archive != null) {
+            val depth = ColorReliefLayer(LAYER_DEPTH, SOURCE_BATHY).apply {
+                setProperties(
+                    PropertyFactory.colorReliefColor(
+                        colorRamp(boat, tideHeightMeters, deepRangeMeters),
+                    ),
+                    PropertyFactory.colorReliefOpacity(1.0f),
+                )
+            }
+            builder
+                .withSource(
+                    RasterDemSource(SOURCE_BATHY, ChartArchive.sourceUri(archive), TILE_SIZE),
+                )
+                .withLayer(depth)
+        }
 
         // Buoyage sits above the depths and below the mariner's own marks: it is
         // reference, not something they placed.

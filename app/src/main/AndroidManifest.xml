@@ -3,17 +3,23 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-        Opennav works with the radio off. The MapLibre SDK declares INTERNET,
-        ACCESS_NETWORK_STATE and ACCESS_WIFI_STATE in its own manifest for the online tile
-        sources we do not use; they are removed here so the installed app cannot reach the
-        network at all, and so the permission list a user sees matches what the app does.
+        Opennav works with the radio off. INTERNET is removed, and that is the guarantee
+        that matters: without it the process cannot open a socket, whatever any library
+        inside it decides to try. The MapLibre SDK declares it for the online tile sources
+        we do not use.
+
+        ACCESS_NETWORK_STATE is NOT removed, and that is deliberate. It grants no data
+        path -- it only permits asking the system whether a network exists -- and MapLibre
+        asks that question inside MapLibre.getInstance(), during Application.onCreate.
+        Removing it turned the first line of the app into a SecurityException, which is
+        the worst possible place for one. Keeping a permission that cannot carry a byte is
+        a smaller price than an app that will not start.
 
         If a future feature genuinely needs the network (downloading a chart pack, say),
         put it behind an explicit user action and re-add INTERNET with a comment saying
         which feature needs it.
     -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove" />
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

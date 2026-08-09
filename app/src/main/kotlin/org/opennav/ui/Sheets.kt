@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import org.opennav.chart.PmtilesHeader
 import org.opennav.core.depth.BoatProfile
@@ -50,7 +52,10 @@ fun SettingsSheet(
     chartName: String?,
     seamarkName: String?,
     importing: Boolean,
+    /** True while the bathymetry on screen is the fabricated demo, so it can be dropped. */
+    canRemoveDemo: Boolean,
     onImport: () -> Unit,
+    onRemoveDemo: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -98,6 +103,19 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.bodyMedium,
             )
             ImportChartButton(importing = importing, onClick = onImport)
+            if (canRemoveDemo) {
+                TextButton(onClick = onRemoveDemo) {
+                    Text("Supprimer la carte de démonstration")
+                }
+                Text(
+                    "Utile dès que le balisage réel est installé : un fond inventé sous " +
+                        "de vraies bouées est pire que pas de fond du tout, parce que ses " +
+                        "couleurs se lisent comme de l'information. La carte ne " +
+                        "reviendra pas toute seule.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 "Le fichier doit déjà être sur le téléphone. Opennav n'a aucun accès " +
                     "réseau : il ne peut pas aller chercher une carte tout seul, et la " +
@@ -273,6 +291,43 @@ fun SourcesSheet(
             )
         }
     }
+}
+
+/**
+ * The previous run's stack trace, on the phone that produced it.
+ *
+ * Shown in full rather than summarised. A trace the user can read is a trace they can
+ * paste, and the first useful line is rarely the first line -- picking one to show would
+ * be guessing at exactly the moment we have stopped guessing.
+ */
+@Composable
+fun CrashReportDialog(report: String, onShare: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("La fois précédente, l'app s'est arrêtée") },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Envoyez ce texte : c'est la seule chose qui dise pourquoi. Il ne " +
+                        "contient ni position, ni identifiant — modèle d'appareil, " +
+                        "version d'Android et pile d'appels.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    report,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onShare) { Text("Partager") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Effacer") } },
+    )
 }
 
 @Composable

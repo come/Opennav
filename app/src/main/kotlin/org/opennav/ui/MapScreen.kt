@@ -7,6 +7,7 @@
  */
 package org.opennav.ui
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +43,8 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.opennav.chart.ChartArchive
 import org.opennav.chart.DepthLayers
-import org.opennav.chart.PmtilesHeader
+import org.opennav.chart.MapEngine
+import org.opennav.diag.CrashLog
 import org.opennav.core.depth.BoatProfile
 import org.opennav.core.geo.LatLon
 import org.opennav.location.Fix
@@ -148,6 +150,10 @@ fun MapScreen(
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
 
+    // Read once, at launch, from the file the uncaught-exception handler wrote. This is
+    // the only way a failure that happened on the water gets back to anyone.
+    var crashReport by remember { mutableStateOf(CrashLog.read(context)) }
+
     // --- side effects -----------------------------------------------------------
 
     LaunchedEffect(locationGranted) {
@@ -177,11 +183,12 @@ fun MapScreen(
     // --- layout -----------------------------------------------------------------
 
     Box(Modifier.fillMaxSize()) {
-        val chart = located.bathymetry
-        if (chart == null) {
+        val chart = located.any
+        if (!MapEngine.isReady) {
+            MapEngineFailed(modifier = Modifier.fillMaxSize())
+        } else if (chart == null) {
             NoChartInstalled(
                 directory = remember { ChartArchive.preferredDirectory(context).absolutePath },
-                hasSeamarksOnly = located.seamarks != null,
                 importing = importing,
                 unpacking = unpacking,
                 canRestoreDemo = demoAvailable && !unpacking,
@@ -190,11 +197,14 @@ fun MapScreen(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            // Keyed on the archive: MapViewHost builds its MapView and its style once, so
+            // Keyed on the archives: MapViewHost builds its MapView and its style once, so
             // importing a different chart has to give it a fresh scope to build them in.
-            key(chart.file.absolutePath, located.seamarks?.file?.absolutePath) {
+            key(
+                located.bathymetry?.file?.absolutePath,
+                located.seamarks?.file?.absolutePath,
+            ) {
             MapViewHost(
-                archive = chart.file,
+                archive = located.bathymetry?.file,
                 seamarks = located.seamarks?.file,
                 header = header,
                 boat = boat,
@@ -233,6 +243,8 @@ fun MapScreen(
             DisclaimerBanner(modifier = Modifier.fillMaxWidth())
             if (located.bathymetry?.header?.synthetic == true) {
                 SyntheticChartBanner(modifier = Modifier.fillMaxWidth())
+            } else if (located.bathymetry == null && located.seamarks != null) {
+                NoBathymetryBanner(modifier = Modifier.fillMaxWidth())
             }
         }
 
@@ -276,7 +288,10 @@ fun MapScreen(
                 )
             }
 
-            if (showTideSlider) {
+            // Without depths the slider moves a colour ramp that is not on screen. Hiding
+            // it is not tidiness: a control that visibly does nothing invites the reading
+            // that the water level has been taken into account.
+            if (showTideSlider && located.bathymetry != null) {
                 TideSlider(
                     tideMeters = tideMeters,
                     boat = boat,
@@ -327,7 +342,15 @@ fun MapScreen(
             chartName = located.bathymetry?.file?.name,
             seamarkName = located.seamarks?.file?.name,
             importing = importing,
+            canRemoveDemo = located.bathymetry?.header?.synthetic == true,
             onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
+            onRemoveDemo = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { ChartArchive.removeBundled(context) }
+                    located = ChartArchive.locate(context, settings.selectedChartPath)
+                    sheet = null
+                }
+            },
             onDismiss = { sheet = null },
         )
         Sheet.SOURCES -> SourcesSheet(
@@ -348,14 +371,61 @@ fun MapScreen(
             },
         )
     }
+
+    // Declared last so it sits above the disclaimer: if the previous run died, that is
+    // the more urgent thing on this launch.
+    crashReport?.let { report ->
+        CrashReportDialog(
+            report = report,
+            onShare = {
+                runCatching {
+                    context.startActivity(
+                        Intent.createChooser(CrashLog.shareIntent(report), "Envoyer le rapport"),
+                    )
+                }
+            },
+            onDismiss = {
+                CrashLog.clear(context)
+                crashReport = null
+            },
+        )
+    }
 }
 
 enum class Sheet { SETTINGS, SOURCES }
 
+/**
+ * Shown when MapLibre itself refused to start.
+ *
+ * There is nothing to retry and nothing to configure; the only useful action left is
+ * getting the recorded reason off the phone, which the crash dialog on top of this offers.
+ */
+@Composable
+private fun MapEngineFailed(modifier: Modifier = Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Le moteur de carte n'a pas démarré", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "MapLibre n'a pas pu s'initialiser sur cet appareil. Le détail a été " +
+                    "enregistré : utilisez « Partager » sur le rapport de plantage pour " +
+                    "l'envoyer, c'est la seule information exploitable.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                MapEngine.failure?.let { "${it.javaClass.name}: ${it.message}" } ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
 @Composable
 private fun NoChartInstalled(
     directory: String,
-    hasSeamarksOnly: Boolean,
     importing: Boolean,
     unpacking: Boolean,
     canRestoreDemo: Boolean,
@@ -377,18 +447,11 @@ private fun NoChartInstalled(
             modifier = Modifier.padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Text("Aucune carte installée", style = MaterialTheme.typography.titleLarge)
             Text(
-                if (hasSeamarksOnly) "Il manque la bathymétrie" else "Aucune carte installée",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                if (hasSeamarksOnly) {
-                    "Le balisage est installé, mais seul il n'a rien sur quoi se poser. " +
-                        "Importez aussi l'archive de bathymétrie de la même zone."
-                } else {
-                    "Choisissez un fichier .pmtiles déjà présent sur le téléphone — " +
-                        "téléchargé, reçu, ou copié par câble."
-                },
+                "Choisissez un fichier .pmtiles déjà présent sur le téléphone — " +
+                    "téléchargé, reçu, ou copié par câble. Bathymétrie ou balisage : " +
+                    "l'un des deux suffit à afficher une carte.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             ImportChartButton(importing = importing, onClick = onImport)
