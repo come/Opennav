@@ -212,21 +212,37 @@ object ChartArchive {
      *
      * Caller's job to keep this off the main thread.
      */
-    fun seedDefaults(context: Context): List<File> = BUNDLED_DEFAULTS.mapNotNull { name ->
-        runCatching {
-            val existing = File(preferredDirectory(context), name)
-            if (existing.isFile && PmtilesHeader.read(existing) != null) {
-                Log.i(TAG, "$name already installed")
-                return@runCatching null
-            }
-            context.assets.open(name).use { input -> install(context, input, name) }
-        }.onFailure { Log.w(TAG, "could not unpack bundled $name", it) }.getOrNull()
-    }
+    fun seedDefaults(context: Context, alreadySeeded: Set<String> = emptySet()): List<String> =
+        BUNDLED_DEFAULTS.filter { it !in alreadySeeded }.mapNotNull { name ->
+            runCatching {
+                val existing = File(preferredDirectory(context), name)
+                if (existing.isFile && PmtilesHeader.read(existing) != null) {
+                    Log.i(TAG, "$name already installed")
+                    return@runCatching name
+                }
+                if (!hasAsset(context, name)) return@runCatching null
+                context.assets.open(name).use { input -> install(context, input, name) }
+                name
+            }.onFailure { Log.w(TAG, "could not unpack bundled $name", it) }.getOrNull()
+        }
 
-    /** Whether this build carries the default charts, so first launch has something to seed. */
-    fun hasDefaults(context: Context): Boolean = BUNDLED_DEFAULTS.any { name ->
+    /**
+     * Bundled charts this build ships that have never been unpacked on this install.
+     *
+     * The question the first frame has to answer, and it is deliberately not "has seeding
+     * ever run". An upgrade that adds a chart must install it even though the app is full
+     * of charts already; a chart the user deleted must stay deleted even though the app
+     * has none. Only a per-name record answers both.
+     */
+    fun unseededDefaults(context: Context, alreadySeeded: Set<String>): List<String> =
+        BUNDLED_DEFAULTS.filter { name ->
+            name !in alreadySeeded &&
+                !File(preferredDirectory(context), name).isFile &&
+                hasAsset(context, name)
+        }
+
+    private fun hasAsset(context: Context, name: String): Boolean =
         runCatching { context.assets.open(name).close() }.isSuccess
-    }
 
     /**
      * Deletes the unpacked demo. Returns true if a file was actually removed.
@@ -244,8 +260,7 @@ object ChartArchive {
     }
 
     /** Whether this build actually carries the demo, so the UI can stop offering it. */
-    fun hasBundled(context: Context): Boolean =
-        runCatching { context.assets.open(BUNDLED_ASSET).close() }.isSuccess
+    fun hasBundled(context: Context): Boolean = hasAsset(context, BUNDLED_ASSET)
 
     /**
      * Copies a stream into the charts directory under [name], atomically enough.

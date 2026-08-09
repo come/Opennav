@@ -75,23 +75,29 @@ fun MapScreen(
     // the empty state never flashes up before the map it is about to be replaced by. Keyed
     // on `any`, not on the bathymetry: the default map is a base map and a buoyage, with no
     // depths, so waiting for a depth archive would spin forever.
+    // Which bundled charts this build ships that have never been unpacked here. Not "has
+    // seeding ever run": that question was a boolean, it was already true from the
+    // version that shipped the demo, and it went on to suppress the Brittany map on every
+    // device that had run an earlier build. Upgrades are the common case, not the rare
+    // one.
     var unpacking by remember {
-        mutableStateOf(located.any == null && !settings.bundledChartSeeded)
+        mutableStateOf(ChartArchive.unseededDefaults(context, settings.seededAssets).isNotEmpty())
     }
     val demoAvailable = remember { ChartArchive.hasBundled(context) }
 
     /**
      * Unpacks the bundled Brittany charts out of the APK and displays them.
      *
-     * Marked as done whether or not it worked. A build without the assets, or a phone with
-     * no room left, would otherwise retry on every launch and delay every one of them;
-     * the empty state keeps offering both a retry-the-demo button and an import, which is
-     * the right place for it.
+     * Only what actually landed is recorded as seeded. A chart that failed to copy --
+     * a phone with no room left is the realistic case -- stays unrecorded and is tried
+     * again next launch, while the ones that succeeded are never copied twice.
      */
     suspend fun installDefaults() {
         unpacking = true
-        withContext(Dispatchers.IO) { ChartArchive.seedDefaults(context) }
-        settings.bundledChartSeeded = true
+        val installed = withContext(Dispatchers.IO) {
+            ChartArchive.seedDefaults(context, settings.seededAssets)
+        }
+        settings.seededAssets = settings.seededAssets + installed
         unpacking = false
         // Deliberately not recorded as the selected chart: the bundled charts are a
         // starting point, and the first real survey imported over them has to win without

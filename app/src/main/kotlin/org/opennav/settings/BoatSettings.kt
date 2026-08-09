@@ -66,17 +66,24 @@ class BoatSettings(context: Context) {
         set(value) = prefs.edit { putBoolean(KEY_DISCLAIMER, value) }
 
     /**
-     * Whether the demo chart bundled in the APK has already been unpacked once.
+     * Names of the charts bundled in the APK that have already been unpacked once.
      *
      * Recorded rather than inferred from the file being present, because the two differ
-     * in the case that matters: a user who deletes the demo -- from the settings sheet or
-     * with a file manager -- means it, and an app that silently restores it at the next
-     * launch is an app that puts a fictitious seabed back on the screen without being
-     * asked. The empty state offers to bring it back explicitly.
+     * in the case that matters: a user who deletes a bundled chart -- from the settings
+     * sheet or with a file manager -- means it, and an app that silently restores it at
+     * the next launch puts a map back on the screen without being asked.
+     *
+     * By name, and not as a single "seeding has happened" flag, because the set of
+     * bundled charts changes between releases. A boolean set by the version that shipped
+     * the demo went on to suppress every chart added afterwards: the Brittany base map
+     * appeared on a clean install and never on an upgrade, which is the wrong way round
+     * for the people most likely to be running the app.
      */
-    var bundledChartSeeded: Boolean
-        get() = prefs.getBoolean(KEY_SEEDED, false)
-        set(value) = prefs.edit { putBoolean(KEY_SEEDED, value) }
+    var seededAssets: Set<String>
+        get() = prefs.getStringSet(KEY_SEEDED_ASSETS, emptySet()) ?: emptySet()
+        // A new set every time: SharedPreferences does not promise to notice a mutation
+        // of the instance it handed out.
+        set(value) = prefs.edit { putStringSet(KEY_SEEDED_ASSETS, LinkedHashSet(value)) }
 
     /**
      * Identity of the last crash report the user has already been shown.
@@ -97,7 +104,7 @@ class BoatSettings(context: Context) {
         const val KEY_HUD = "show_perf_hud"
         const val KEY_DISCLAIMER = "disclaimer_accepted"
         const val KEY_CHART = "selected_chart_path"
-        const val KEY_SEEDED = "bundled_chart_seeded"
+        const val KEY_SEEDED_ASSETS = "seeded_asset_names"
         const val KEY_CRASH_SEEN = "acknowledged_crash_id"
 
         const val DEFAULT_NAME = "Mon bateau"
