@@ -26,9 +26,22 @@ render.experimental.xml
 # Keystore files
 *.jks
 *.keystore
+# ...except the CI key, which is committed on purpose so that every build installs over
+# the previous one instead of demanding an uninstall. Its password is published in
+# ci/README.md; it is not, and must never become, a release key.
+!ci/opennav-ci.keystore
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 
 # Android Profiling
 *.hprof
+
+# Generated chart archives. Built by tools/, never committed: the synthetic one is
+# reproducible in 15 s and the real ones are hundreds of megabytes.
+*.pmtiles
+
+# Python
+__pycache__/
+*.pyc
+.venv/

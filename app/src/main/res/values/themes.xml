@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Compose draws everything, so the platform theme only has to get out of the way:
+        no action bar, and transparent system bars so the chart runs edge to edge behind
+        them. The Compose layer re-inserts the insets where they matter.
+    -->
+    <style name="Theme.Opennav" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/opennav_background</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

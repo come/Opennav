@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- The boat profile is worth keeping; chart archives are hundreds of megabytes
+         and are re-installed from the desktop, so they stay out of backups. -->
+    <include domain="sharedpref" path="opennav.xml" />
+    <exclude domain="file" path="charts" />
+    <exclude domain="external" path="charts" />
+</full-backup-content>
