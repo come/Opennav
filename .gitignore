@@ -37,9 +37,16 @@ google-services.json
 # Android Profiling
 *.hprof
 
-# Generated chart archives. Built by tools/, never committed: the synthetic one is
-# reproducible in 15 s and the real ones are hundreds of megabytes.
+# Generated chart archives. Built by tools/, never committed: the real ones are hundreds
+# of megabytes and their licence wants an attribution only the app can carry.
 *.pmtiles
+
+# ...except the demo shipped inside the APK, which is committed on purpose. It is a few
+# megabytes of invented seabed, it changes about never, and the alternative -- generating
+# it during the build -- would make a working APK depend on having Python on the machine
+# and would quietly produce an app that opens on an empty screen when it is missing.
+# Regenerate with the command in tools/README.md; it takes about two minutes.
+!app/src/main/assets/*.pmtiles
 
 # Python
 __pycache__/

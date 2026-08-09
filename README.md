@@ -32,33 +32,46 @@ Reste à faire tourner l'APK sur un vrai téléphone pour remplir les deux derni
 
 ## Essayer
 
-Aucune donnée SHOM n'est nécessaire pour un premier lancement : le dépôt sait fabriquer un
-morceau de fond marin synthétique, avec un chenal, un haut-fond qui découvre et un trou
-non levé.
+Installez l'APK, ouvrez-le : il y a une carte. **Elle est fausse.**
+
+L'app embarque une carte de démonstration couvrant la baie de Quiberon, Houat, Hoëdic et
+le golfe du Morbihan — 4,4 Mo dépaquetés au premier lancement. Le trait de côte est réel
+(c'est celui de la projection), le fond marin est inventé de bout en bout : un chenal
+rectiligne à −34 m, un haut-fond circulaire qui découvre à +1,4 m, un trou circulaire sans
+donnée. Trois figures géométriques, choisies pour être reconnaissables comme telles à tous
+les zooms. Un bandeau rouge permanent le dit tant qu'elle est affichée, et l'écran Sources
+refuse de créditer le SHOM pour elle.
+
+Elle existe pour deux raisons : arriver sur un écran vide n'apprend rien, et les trois
+objets qu'elle contient sont exactement ceux qu'il faut pour vérifier la colorisation.
+Balayez le slider « Hauteur d'eau simulée » : le haut-fond doit passer du bleu au jaune, à
+l'orange, au rouge, et le trou doit rester violet quoi qu'il arrive.
+
+La première vraie carte importée la remplace automatiquement — à taille égale, un levé
+passe devant une démonstration. Supprimez-la si elle gêne : l'app ne la remettra pas
+d'elle-même, et un bouton dans l'écran vide permet de la faire revenir.
 
 ```bash
-# 1. Une carte d'essai (15 s, bibliothèque standard uniquement)
-./tools/make_sample_pmtiles.py --out sample.pmtiles
-
-# 2. L'APK — ou récupérez l'artefact `opennav-apk-debug` de la CI
+# L'APK — ou récupérez l'artefact `opennav-apk-debug` de la CI
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-# 3. La carte, là où l'app la cherche
-adb shell mkdir -p /sdcard/Android/data/org.opennav/files/charts
-adb push sample.pmtiles /sdcard/Android/data/org.opennav/files/charts/
 ```
 
-Puis balayez le slider « Hauteur d'eau simulée » : le haut-fond doit passer du bleu au
-jaune, à l'orange, au rouge, et le trou de données doit rester violet quoi qu'il arrive.
+Pour fabriquer une autre zone factice (sous un vrai balisage OpenSeaMap, par exemple) :
+
+```bash
+./tools/make_sample_pmtiles.py --out essai.pmtiles --bounds -4.62 48.29 -4.38 48.40
+adb push essai.pmtiles /sdcard/Android/data/org.opennav/files/charts/
+```
 
 ## Obtenir la bathymétrie de la Bretagne
 
 **Il n'existe pas de carte Bretagne à télécharger.** Le dépôt ne contient aucune donnée
 SHOM et n'en contiendra pas : Litto3D fait plusieurs dizaines de gigaoctets et sa licence
-demande une attribution que seul l'écran Sources peut porter. Vous fabriquez le fichier
-une fois, sur un poste de travail, puis vous le poussez sur le téléphone. Comptez une
-soirée pour la première zone, quelques minutes pour les suivantes.
+demande une attribution que seul l'écran Sources peut porter. La démonstration embarquée
+n'est pas une exception à cette règle — c'est justement pourquoi son fond est inventé.
+Vous fabriquez le fichier une fois, sur un poste de travail, puis vous le poussez sur le
+téléphone. Comptez une soirée pour la première zone, quelques minutes pour les suivantes.
 
 ### 1. Récupérer les dalles Litto3D
 

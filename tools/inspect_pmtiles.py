@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import math
 import os
 import struct
 import sys
@@ -64,11 +65,29 @@ def _decode_terrain(blob: bytes) -> list[float]:
     return out
 
 
+def _spread(lo: int, hi: int, count: int) -> list[int]:
+    """``count`` indices spread evenly across [lo, hi] inclusive, deduplicated."""
+    span = hi - lo
+    if count <= 1 or span <= 0:
+        return [lo + span // 2]
+    return sorted({lo + round(span * i / (count - 1)) for i in range(count)})
+
+
 def _tiles_at(reader: PMTilesReader, zoom: int, limit: int):
+    """Decode a sample of tiles, spread over the whole archive.
+
+    On a lattice rather than in scan order. Walking the grid from the first tile decodes
+    a handful of neighbours out of one corner and then reports that corner as if it were
+    the archive: run this against a chart of the Baie de Quiberon and it will tell you
+    there is no water deeper than ten metres in it, because the north-west corner is a
+    field.
+    """
     x0, y0, x1, y1 = tilemath.tile_range(reader.bounds, zoom, tilemath.TILE_SIZE)
+    columns = max(1, math.isqrt(limit))
+    rows = max(1, -(-limit // columns))
     seen = 0
-    for x in range(x0, x1 + 1):
-        for y in range(y0, y1 + 1):
+    for x in _spread(x0, x1, columns):
+        for y in _spread(y0, y1, rows):
             blob = reader.get(zoom, x, y)
             if blob is None:
                 continue

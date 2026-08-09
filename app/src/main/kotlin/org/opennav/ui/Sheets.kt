@@ -148,6 +148,8 @@ fun SourcesSheet(
     chartName: String?,
     seamarkName: String?,
     header: PmtilesHeader?,
+    /** True while the depths on screen are the fabricated demo rather than a survey. */
+    syntheticBathymetry: Boolean,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -166,11 +168,32 @@ fun SourcesSheet(
             Text("Sources des données", style = MaterialTheme.typography.titleLarge)
 
             Text("Bathymétrie", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "Shom - IGN, 2024. https://doi.org/10.17183/LITTO3D_BZH_2018_2021\n" +
-                    "Licence Ouverte 2.0 (Etalab).",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (syntheticBathymetry) {
+                // Crediting the SHOM for an invented seabed would be both a false
+                // attribution and the most misleading sentence in the app.
+                Text(
+                    "Aucune. Les profondeurs affichées sont FICTIVES : c'est la carte " +
+                        "de démonstration livrée avec l'app, un fond marin inventé posé " +
+                        "sous un vrai trait de côte pour que l'écran ne soit pas vide.\n\n" +
+                        "Elle ne contient aucune donnée du Shom ni de l'IGN. Le chenal, " +
+                        "le haut-fond et le trou sans donnée sont des figures " +
+                        "géométriques. Ne naviguez pas avec.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    "Pour de vraies profondeurs : fabriquez une zone depuis les dalles " +
+                        "Litto3D du Shom (voir le README), puis importez-la. Elle " +
+                        "remplacera la démonstration automatiquement.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text(
+                    "Shom - IGN, 2024. https://doi.org/10.17183/LITTO3D_BZH_2018_2021\n" +
+                        "Licence Ouverte 2.0 (Etalab).",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
 
             Text("Balisage", style = MaterialTheme.typography.titleSmall)
             Text(
@@ -215,8 +238,14 @@ fun SourcesSheet(
 
             Divider()
             Text("Ce que l'app ne sait pas", style = MaterialTheme.typography.titleSmall)
+            val provenance = if (syntheticBathymetry) {
+                "• Les profondeurs affichées sont inventées : rien de ce qui suit ne " +
+                    "s'applique tant qu'une vraie carte n'est pas importée.\n"
+            } else {
+                "• Le levé date de 2018-2021. Les bancs de sable bougent.\n"
+            }
             Text(
-                "• Le levé date de 2018-2021. Les bancs de sable bougent.\n" +
+                provenance +
                     "• Le lidar bathymétrique ne pénètre que 10 à 20 m selon la " +
                     "turbidité ; au-delà il n'y a pas de donnée, affichée en violet et " +
                     "jamais interpolée.\n" +

@@ -97,20 +97,26 @@ Honnêtement, et ce sont les seules cases du plan qui restent ouvertes :
 > *« la colorisation change quand on bouge un slider de seuil, à 60 fps sur un mobile
 > milieu de gamme. »*
 
-Protocole, une fois l'APK installé :
+Protocole, une fois l'APK installé. Aucune préparation : la carte de démonstration est
+embarquée et se dépaquette au premier lancement.
 
-1. `./tools/make_sample_pmtiles.py --out sample.pmtiles` (15 s, aucune dépendance)
-2. `adb push sample.pmtiles /sdcard/Android/data/org.opennav/files/charts/`
-3. Lancer l'app. Le HUD en haut à gauche donne `frame` en millisecondes : **16,6 ms est la
-   ligne des 60 fps**. Le chiffre vient de MapLibre lui-même
-   (`onDidFinishRenderingFrame`), pas de Compose, donc il mesure bien le shader.
-4. Balayer le slider « Hauteur d'eau simulée » de bout en bout. Le chenal doit rester
+1. Lancer l'app. Elle doit s'ouvrir sur la baie de Quiberon, sous un bandeau rouge
+   « CARTE FICTIVE ». Si elle s'ouvre sur un écran noir ou sur une bande rouge d'erreur en
+   bas, c'est que `pmtiles://file://…` a été refusé — **c'est le point non vérifié le plus
+   important de toute la phase 0**, et le message d'erreur est la réponse.
+2. Le HUD en haut à gauche donne `frame` en millisecondes : **16,6 ms est la ligne des
+   60 fps**. Le chiffre vient de MapLibre lui-même (`onDidFinishRenderingFrame`), pas de
+   Compose, donc il mesure bien le shader.
+3. Balayer le slider « Hauteur d'eau simulée » de bout en bout. Le chenal doit rester
    bleu, le haut-fond doit passer du bleu au jaune, à l'orange, au rouge, et le trou de
    données doit rester violet quoi qu'il arrive.
-5. Noter `carte` (Mo) dans le HUD pour recouper l'estimation de volume.
+4. Noter `carte` (Mo) dans le HUD pour recouper l'estimation de volume.
 
-L'échantillon synthétique contient exactement les trois objets nécessaires à ce test : un
-chenal dragué, un haut-fond qui découvre, et un trou non levé.
+La démonstration contient exactement les trois objets nécessaires à ce test : un chenal
+dragué, un haut-fond qui découvre, et un trou non levé. Elle mesure 4,4 Mo pour 1 124
+tuiles, soit 3,9 KiB par tuile — un fond inventé est lisse, donc bien plus compressible
+qu'un levé réel. **Ne pas s'en servir pour valider le budget de 400 Mo** : cette
+vérification-là demande une vraie zone Litto3D.
 
 ## Ce qui a été construit, et ce qui ne l'a pas été
 

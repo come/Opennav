@@ -26,10 +26,43 @@ python3 -m unittest discover -s tools -v
 ./tools/make_sample_pmtiles.py --out sample.pmtiles
 ```
 
-Quinze secondes, bibliothèque standard uniquement. Produit un chenal dragué, un haut-fond
-qui découvre à environ +1,4 m, et un trou sans donnée — les trois objets nécessaires pour
-vérifier que la colorisation, les bandes et la sentinelle fonctionnent sur un vrai GPU.
-L'archive se déclare `"synthetic": true` dans ses métadonnées et son nom le dit aussi.
+Une quinzaine de secondes sur l'emprise par défaut, bibliothèque standard uniquement.
+Produit un chenal dragué à −34 m, un haut-fond qui découvre à +1,4 m, et un trou sans
+donnée — les trois objets nécessaires pour vérifier que la colorisation, les bandes et la
+sentinelle fonctionnent sur un vrai GPU. L'archive se déclare `"synthetic": true` dans ses
+métadonnées et son nom le dit aussi.
+
+`--bounds` déplace l'emprise. Les trois objets sont placés en *fractions de la fenêtre*,
+pas en coordonnées : ils suivent. Les profondeurs, elles, restent en mètres — élargir
+l'emprise agrandit le chenal, ne le creuse pas. C'est ce qui permet de poser un fond
+factice sous un vrai balisage OpenSeaMap en attendant les dalles Litto3D.
+
+### Régénérer la carte de démonstration embarquée
+
+`app/src/main/assets/demo-quiberon-synthetic.pmtiles` est le seul `.pmtiles` versionné du
+dépôt. Il est produit par :
+
+```bash
+./tools/make_sample_pmtiles.py \
+    --out app/src/main/assets/demo-quiberon-synthetic.pmtiles \
+    --bounds -3.32 47.28 -2.65 47.66 \
+    --min-zoom 8 --max-zoom 14 \
+    --area-name "Baie de Quiberon"
+```
+
+Environ deux minutes, 4,4 Mo, 1 124 tuiles. L'emprise est celle du préréglage `morbihan`
+de `build_area.py`, pour qu'une vraie carte fabriquée avec `--area morbihan` se substitue
+exactement à la démonstration.
+
+Vérifiez le résultat avant de le committer — l'inspecteur échantillonne sur un damier et
+décode réellement les tuiles :
+
+```bash
+./tools/inspect_pmtiles.py app/src/main/assets/demo-quiberon-synthetic.pmtiles --sample 36
+```
+
+Les altitudes doivent aller d'environ −34 m à +6 m. Si la plage est étroite, le fond a été
+fabriqué ailleurs que sous l'emprise demandée et l'app affichera un rectangle uni.
 
 ## Avec de vraies dalles Litto3D
 

@@ -5,8 +5,8 @@
 
 Litto3D needs a SHOM account and a few gigabytes of download, which is a poor thing to
 stand between a contributor and their first run of the app. This script fabricates a
-small piece of seabed off Brest with the three features the spike has to prove it
-renders correctly:
+small piece of seabed with the three features the spike has to prove it renders
+correctly:
 
   * a dredged channel deep enough to stay blue at any state of the tide,
   * a shoal that dries, so the red band appears and disappears as the slider moves,
@@ -18,6 +18,18 @@ Litto3D tiles, so the app cannot tell them apart -- which is exactly why the arc
 labelled as synthetic in its metadata and in its filename.
 
     ./tools/make_sample_pmtiles.py --out sample-brest.pmtiles
+
+The three features are placed as *fractions of the requested window*, not at fixed
+coordinates, so ``--bounds`` moves the whole invented seabed rather than leaving it
+behind in the Rade de Brest. That is the difference between a demo and a flat blue
+rectangle, and it is why the app ships one of these under the Baie de Quiberon.
+
+Two properties are deliberate, and both point the same way -- towards being unmistakable:
+
+  * the shapes stay geometric. A straight channel, a circular shoal and a circular hole
+    do not look like a survey at any zoom, whatever coastline they are laid over.
+  * the depths stay in metres. Widening the window scales the features, never the
+    soundings, so a demo of the Golfe du Morbihan is as deep as a demo of the Goulet.
 
 NOT FOR NAVIGATION. The numbers in here are invented.
 """
@@ -38,51 +50,97 @@ import terrain_rgb  # noqa: E402
 import tiles  # noqa: E402
 from pmtiles import COMPRESSION_NONE, TILETYPE_PNG, write_pmtiles  # noqa: E402
 
-# A patch of the Rade de Brest and the Goulet. Small enough to build in a few seconds.
-BOUNDS = (-4.62, 48.29, -4.38, 48.40)
+#: A patch of the Rade de Brest and the Goulet. Small enough to build in a few seconds.
+DEFAULT_BOUNDS = (-4.62, 48.29, -4.38, 48.40)
 MIN_ZOOM = 10
 MAX_ZOOM = 14
 
-# Feature placement, in degrees.
-_CHANNEL_LAT = 48.335
-_SHOAL = (-4.505, 48.352)
-_HOLE = (-4.455, 48.318)
+# --- feature placement, as fractions of the window ---------------------------------
+#
+# 0 is the south/west edge, 1 the north/east edge. Chosen so that the channel, the shoal
+# and the hole are all comfortably inside any window, and none of them sits on top of
+# another.
+_SHORE = 0.87           # water below this, land above it
+_CHANNEL = 0.41         # axis of the dredged channel
+_SHOAL = (0.48, 0.62)   # lon, lat
+_HOLE = (0.69, 0.26)
+
+# Feature sizes, as fractions of the window's latitude span.
+_CHANNEL_HALF_WIDTH = 0.27
+_SHOAL_RADIUS = 0.09
+_HOLE_RADIUS = 0.11
+_SHORE_WOBBLE = 0.036   # amplitude
+_SHORE_WAVES = 8.0      # over the longitude span
+
+# --- depths, in metres, which do NOT scale with the window --------------------------
+_CHANNEL_DEPTH_M = -34.0
+_SHELF_NEAR_M = -6.0     # just off the beach
+_SHELF_FAR_M = -11.0     # at the offshore edge of the window
+_SHOAL_PEAK_M = 1.4      # dries: the reason the red band has anything to bite on
+_SHORE_RISE_M = 2.0
+_INLAND_SLOPE_M = 24.0   # over the window's latitude span
+_RIPPLE_M = 0.45
+_RIPPLE_WAVES = (34.0, 19.0)
 
 
-def seabed_elevation_m(lon: float, lat: float) -> float:
-    """Invented seabed, in metres positive up from chart datum."""
-    # A hole where the lidar found nothing. Checked first: no data beats any model.
-    if _distance_deg(lon, lat, *_HOLE) < 0.012:
-        return terrain_rgb.NO_DATA_ELEVATION_M
+class Seabed:
+    """An invented seabed, sized and positioned to fill one geographic window."""
 
-    # Land to the north, sloping up away from the shore.
-    shore_lat = 48.386 + 0.004 * math.sin((lon + 4.5) * 210.0)
-    if lat > shore_lat:
-        return 2.0 + 260.0 * (lat - shore_lat)
+    def __init__(self, bounds: tuple[float, float, float, float]):
+        self.bounds = bounds
+        min_lon, min_lat, max_lon, max_lat = bounds
+        self._lon0, self._lat0 = min_lon, min_lat
+        self._span_lon = max_lon - min_lon
+        self._span_lat = max_lat - min_lat
+        if self._span_lon <= 0 or self._span_lat <= 0:
+            raise ValueError(f"emprise vide ou inversee : {bounds}")
 
-    # A channel running east-west, deepest on its axis.
-    across = abs(lat - _CHANNEL_LAT) / 0.030
-    channel = -34.0 * math.exp(-across * across)
+        # Everything below works in window fractions, so nothing has to be re-derived
+        # per sample. Longitude is squeezed by the latitude cosine first, so a circular
+        # feature stays circular on the ground instead of turning into an ellipse.
+        self._squeeze = math.cos(math.radians((min_lat + max_lat) / 2.0))
+        self._aspect = self._span_lon * self._squeeze / self._span_lat
 
-    # General shelving from the shore out to the channel.
-    shelf = -6.0 - 40.0 * (shore_lat - lat)
+    def elevation_m(self, lon: float, lat: float) -> float:
+        """Elevation in metres, positive up from chart datum."""
+        u = (lon - self._lon0) / self._span_lon
+        v = (lat - self._lat0) / self._span_lat
 
-    elevation = min(channel, shelf)
+        # A hole where the lidar found nothing. Checked first: no data beats any model.
+        if self._distance(u, v, *_HOLE) < _HOLE_RADIUS:
+            return terrain_rgb.NO_DATA_ELEVATION_M
 
-    # A shoal that dries about 1.4 m above chart datum.
-    d = _distance_deg(lon, lat, *_SHOAL) / 0.010
-    elevation += 12.0 * math.exp(-d * d)
+        # Land to the north, sloping up away from the shore.
+        shore = _SHORE + _SHORE_WOBBLE * math.sin(u * _SHORE_WAVES * 2.0 * math.pi)
+        if v > shore:
+            return _SHORE_RISE_M + _INLAND_SLOPE_M * (v - shore)
 
-    # Ripples, so the colour bands have something to bite on.
-    elevation += 0.45 * math.sin(lon * 900.0) * math.cos(lat * 1100.0)
-    return elevation
+        # A channel running east-west, deepest on its axis, cut into a shelf that
+        # deepens away from the beach. The deeper of the two: the channel is dredged
+        # *into* the shelf, it is not laid on top of it.
+        across = (v - _CHANNEL) / _CHANNEL_HALF_WIDTH
+        channel = _CHANNEL_DEPTH_M * math.exp(-across * across)
+        shelf = _SHELF_NEAR_M + (_SHELF_FAR_M - _SHELF_NEAR_M) * (shore - v) / max(shore, 1e-6)
+        elevation = min(channel, shelf)
 
+        # A shoal that dries. Written as a pull towards a target height rather than as a
+        # bump of so many metres, so that its summit is _SHOAL_PEAK_M whatever the seabed
+        # underneath happens to be. A fixed bump would leave it 12 m under water once it
+        # landed over the channel, and the drying band would quietly never appear.
+        d = self._distance(u, v, *_SHOAL) / _SHOAL_RADIUS
+        pull = math.exp(-d * d)
+        elevation += (_SHOAL_PEAK_M - elevation) * pull
 
-def _distance_deg(lon_a: float, lat_a: float, lon_b: float, lat_b: float) -> float:
-    # Good enough at this latitude and this scale; nothing safety-critical depends on it.
-    dx = (lon_a - lon_b) * math.cos(math.radians(lat_a))
-    dy = lat_a - lat_b
-    return math.hypot(dx, dy)
+        # Ripples, so the colour bands have something to bite on.
+        elevation += _RIPPLE_M * (
+            math.sin(u * _RIPPLE_WAVES[0] * 2.0 * math.pi)
+            * math.cos(v * _RIPPLE_WAVES[1] * 2.0 * math.pi)
+        )
+        return elevation
+
+    def _distance(self, u: float, v: float, cu: float, cv: float) -> float:
+        """Distance in window fractions, corrected so circles stay round."""
+        return math.hypot((u - cu) * self._aspect, v - cv)
 
 
 class _Level:
@@ -99,10 +157,10 @@ class _Level:
         self.cells = array.array("f", [terrain_rgb.NO_DATA_ELEVATION_M]) * (self.w * self.h)
 
 
-def _sample_level(zoom: int, tile_size: int) -> _Level:
-    x0, y0, x1, y1 = tiles.tile_range(BOUNDS, zoom, tile_size)
+def _sample_level(seabed: Seabed, zoom: int, tile_size: int) -> _Level:
+    x0, y0, x1, y1 = tiles.tile_range(seabed.bounds, zoom, tile_size)
     level = _Level(zoom, x0, y0, x1, y1, tile_size)
-    min_lon, min_lat, max_lon, max_lat = BOUNDS
+    min_lon, min_lat, max_lon, max_lat = seabed.bounds
     for row in range(level.h):
         lat = tiles.pixel_y_to_lat(level.oy + row + 0.5, zoom, tile_size)
         base = row * level.w
@@ -113,11 +171,11 @@ def _sample_level(zoom: int, tile_size: int) -> _Level:
             lon = tiles.pixel_x_to_lon(level.ox + col + 0.5, zoom, tile_size)
             if not (min_lon <= lon <= max_lon):
                 continue
-            level.cells[base + col] = seabed_elevation_m(lon, lat)
+            level.cells[base + col] = seabed.elevation_m(lon, lat)
     return level
 
 
-def _downsample(fine: _Level, tile_size: int) -> _Level:
+def _downsample(seabed: Seabed, fine: _Level, tile_size: int) -> _Level:
     """Build the next coarser level, keeping the SHALLOWEST of each 2x2 block.
 
     Shallowest means the *greatest* elevation, because elevations are positive up. This
@@ -131,7 +189,7 @@ def _downsample(fine: _Level, tile_size: int) -> _Level:
     native zoom, which is why the app warns when it is zoomed out.
     """
     zoom = fine.zoom - 1
-    x0, y0, x1, y1 = tiles.tile_range(BOUNDS, zoom, tile_size)
+    x0, y0, x1, y1 = tiles.tile_range(seabed.bounds, zoom, tile_size)
     coarse = _Level(zoom, x0, y0, x1, y1, tile_size)
     for row in range(coarse.h):
         gy = coarse.oy + row
@@ -183,47 +241,44 @@ def _encode_level(level: _Level, tile_size: int) -> dict[tuple[int, int, int], b
     return out
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default="sample-brest-synthetic.pmtiles")
-    parser.add_argument(
-        "--bounds", type=float, nargs=4,
-        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
-        help="fabriquer le fond ailleurs qu'en rade de Brest -- pratique pour poser un "
-             "fond factice sous un vrai balisage en attendant les donnees Litto3D. "
-             "L'archive reste marquee synthetique et l'app affiche un bandeau rouge.",
-    )
-    parser.add_argument("--tile-size", type=int, default=tiles.TILE_SIZE)
-    parser.add_argument("--min-zoom", type=int, default=MIN_ZOOM)
-    parser.add_argument("--max-zoom", type=int, default=MAX_ZOOM)
-    args = parser.parse_args()
+def build(
+    out_path: str,
+    bounds: tuple[float, float, float, float],
+    min_zoom: int = MIN_ZOOM,
+    max_zoom: int = MAX_ZOOM,
+    tile_size: int = tiles.TILE_SIZE,
+    area_name: str | None = None,
+    quiet: bool = False,
+) -> str:
+    """Write one synthetic archive. Returns the path, for callers that chain steps."""
+    def say(message: str) -> None:
+        if not quiet:
+            print(message, flush=True)
 
-    if args.bounds:
-        global BOUNDS
-        BOUNDS = tuple(args.bounds)
-        print(f"fond synthetique sur {BOUNDS} -- NE PAS NAVIGUER AVEC", flush=True)
-
+    seabed = Seabed(bounds)
     started = time.monotonic()
-    print(f"sampling z{args.max_zoom} ...", flush=True)
-    level = _sample_level(args.max_zoom, args.tile_size)
+
+    say(f"sampling z{max_zoom} ...")
+    level = _sample_level(seabed, max_zoom, tile_size)
 
     all_tiles: dict[tuple[int, int, int], bytes] = {}
-    all_tiles.update(_encode_level(level, args.tile_size))
-    for zoom in range(args.max_zoom - 1, args.min_zoom - 1, -1):
-        print(f"downsampling to z{zoom} ...", flush=True)
-        level = _downsample(level, args.tile_size)
-        all_tiles.update(_encode_level(level, args.tile_size))
+    all_tiles.update(_encode_level(level, tile_size))
+    for zoom in range(max_zoom - 1, min_zoom - 1, -1):
+        say(f"downsampling to z{zoom} ...")
+        level = _downsample(seabed, level, tile_size)
+        all_tiles.update(_encode_level(level, tile_size))
 
+    where = f" ({area_name})" if area_name else ""
     write_pmtiles(
-        args.out,
+        out_path,
         all_tiles,
-        bounds=BOUNDS,
-        center=((BOUNDS[0] + BOUNDS[2]) / 2, _CHANNEL_LAT),
-        center_zoom=13,
+        bounds=bounds,
+        center=((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2),
+        center_zoom=min(13, max_zoom),
         tile_type=TILETYPE_PNG,
         tile_compression=COMPRESSION_NONE,
         metadata={
-            "name": "Opennav sample (SYNTHETIC, not for navigation)",
+            "name": f"Opennav demo{where} (SYNTHETIC, not for navigation)",
             "format": "png",
             "encoding": "mapbox",
             "type": "baselayer",
@@ -233,15 +288,49 @@ def main() -> int:
             "attribution": "Synthetic test data. Contains no SHOM or IGN material.",
             "description": (
                 "Invented bathymetry generated by tools/make_sample_pmtiles.py so that "
-                "the Phase 0 spike can be run without a SHOM account. NOT FOR NAVIGATION."
+                "the app can be run without a SHOM account. The channel, the shoal and "
+                "the data hole are geometric shapes placed by fractions of the window; "
+                "they bear no relation to the seabed under them. NOT FOR NAVIGATION."
             ),
         },
     )
 
-    size = os.path.getsize(args.out)
-    print(
-        f"wrote {args.out}: {len(all_tiles)} tiles, {size / 1024 / 1024:.2f} MiB, "
+    size = os.path.getsize(out_path)
+    say(
+        f"wrote {out_path}: {len(all_tiles)} tiles, {size / 1024 / 1024:.2f} MiB, "
         f"{size / len(all_tiles):.0f} bytes/tile, in {time.monotonic() - started:.1f} s"
+    )
+    return out_path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--out", default="sample-brest-synthetic.pmtiles")
+    parser.add_argument(
+        "--bounds", type=float, nargs=4,
+        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
+        help="fabriquer le fond ailleurs qu'en rade de Brest -- pratique pour poser un "
+             "fond factice sous un vrai balisage en attendant les donnees Litto3D. "
+             "L'archive reste marquee synthetique et l'app affiche un bandeau rouge.",
+    )
+    parser.add_argument("--area-name", help="nom de la zone, ecrit dans les metadonnees")
+    parser.add_argument("--tile-size", type=int, default=tiles.TILE_SIZE)
+    parser.add_argument("--min-zoom", type=int, default=MIN_ZOOM)
+    parser.add_argument("--max-zoom", type=int, default=MAX_ZOOM)
+    args = parser.parse_args()
+
+    bounds = tuple(args.bounds) if args.bounds else DEFAULT_BOUNDS
+    if args.bounds:
+        print(f"fond synthetique sur {bounds} -- NE PAS NAVIGUER AVEC", flush=True)
+
+    build(
+        args.out,
+        bounds,
+        min_zoom=args.min_zoom,
+        max_zoom=args.max_zoom,
+        tile_size=args.tile_size,
+        area_name=args.area_name,
     )
     return 0
 

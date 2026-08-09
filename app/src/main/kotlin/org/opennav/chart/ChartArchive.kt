@@ -12,6 +12,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import java.io.File
+import java.io.InputStream
 
 /**
  * Where the bathymetry archive lives on the device.
@@ -31,6 +32,20 @@ object ChartArchive {
 
     const val DIRECTORY_NAME = "charts"
     const val EXTENSION = ".pmtiles"
+
+    /**
+     * A fabricated seabed under the Baie de Quiberon, shipped inside the APK.
+     *
+     * It exists so the first launch shows a map instead of an empty screen, and so the
+     * colour bands, the drying shoal and the violet no-data hole can be checked on a real
+     * phone without a SHOM account. It is *not* a chart: the channel, the shoal and the
+     * hole are geometric shapes laid over a real coastline, and the app says so in a
+     * permanent red band for as long as it is the archive being displayed.
+     *
+     * The name carries the warning too, because the file outlives the app's UI as soon as
+     * someone copies it off the phone.
+     */
+    const val BUNDLED_ASSET = "demo-quiberon-synthetic.pmtiles"
 
     private const val TAG = "ChartArchive"
     private const val STAGING_SUFFIX = ".part"
@@ -67,8 +82,11 @@ object ChartArchive {
      * overlay, so the two can be installed independently and shown together.
      *
      * Within a kind, an explicit choice ([preferredPath], set when the user imports a
-     * file) wins; failing that the largest does, on the assumption that it is a real
-     * survey rather than the synthetic sample.
+     * file) wins. Failing that, a real survey beats a fabricated one and the larger beats
+     * the smaller -- in that order. Size alone used to decide, which was fine while the
+     * only synthetic archive was one a developer had gone out of their way to install;
+     * with a demo shipped in the APK it is not, because a single imported harbour can
+     * easily weigh less than a demo spanning a whole bay.
      */
     fun locate(context: Context, preferredPath: String? = null): Charts {
         val readable = installed(context).mapNotNull { file ->
@@ -78,7 +96,10 @@ object ChartArchive {
         fun pick(tileType: Int): Located? {
             val ofKind = readable.filter { it.header.tileType == tileType }
             return ofKind.firstOrNull { it.file.absolutePath == preferredPath }
-                ?: ofKind.firstOrNull()
+                ?: ofKind.minWithOrNull(
+                    compareBy<Located> { it.header.synthetic }
+                        .thenByDescending { it.file.length() },
+                )
         }
 
         val charts = Charts(
@@ -106,28 +127,71 @@ object ChartArchive {
      * of megabytes.
      */
     fun importFrom(context: Context, uri: Uri): Result<File> = runCatching {
-        val directory = preferredDirectory(context)
         val name = displayName(context, uri)
+        context.contentResolver.openInputStream(uri).use { input ->
+            requireNotNull(input) { "impossible de lire le fichier choisi" }
+            install(context, input, name)
+        }
+    }.onFailure { Log.w(TAG, "import failed", it) }
+
+    /**
+     * Unpacks the bundled demo chart on first launch, so the app opens on a map.
+     *
+     * Copied out of the APK rather than read in place. MapLibre does understand
+     * `asset://`, so `pmtiles://asset://…` is tempting and would save the disk copy --
+     * but it is a second unverified URI scheme stacked under an unverified one, and the
+     * whole point of the demo is to be the thing that proves the *first* one works. A
+     * copy costs a few megabytes once and puts the demo on exactly the code path an
+     * imported chart takes.
+     *
+     * Returns null when the demo is already installed, when the asset is missing from
+     * the build, or when the copy fails: none of those is worth interrupting a launch
+     * for, and the empty state still explains how to import a real chart.
+     *
+     * Caller's job to keep this off the main thread, and to remember that it ran -- a
+     * demo the user deleted must stay deleted rather than reappearing at every launch.
+     */
+    fun seedBundled(context: Context): File? = runCatching {
+        val existing = File(preferredDirectory(context), BUNDLED_ASSET)
+        if (existing.isFile && PmtilesHeader.read(existing) != null) {
+            Log.i(TAG, "demo already installed")
+            return null
+        }
+        context.assets.open(BUNDLED_ASSET).use { input ->
+            install(context, input, BUNDLED_ASSET)
+        }
+    }.onFailure { Log.w(TAG, "could not unpack the bundled demo", it) }.getOrNull()
+
+    /** Whether this build actually carries the demo, so the UI can stop offering it. */
+    fun hasBundled(context: Context): Boolean =
+        runCatching { context.assets.open(BUNDLED_ASSET).close() }.isSuccess
+
+    /**
+     * Copies a stream into the charts directory under [name], atomically enough.
+     *
+     * Written to a temporary name and renamed only once the copy completes and the header
+     * parses, so a copy interrupted halfway -- or a file that was never a chart -- cannot
+     * leave a truncated archive sitting there looking valid.
+     */
+    private fun install(context: Context, source: InputStream, name: String): File {
+        val directory = preferredDirectory(context)
         val destination = File(directory, name)
         val staging = File(directory, "$name$STAGING_SUFFIX")
 
         staging.delete()
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "impossible de lire le fichier choisi" }
-            staging.outputStream().use { output -> input.copyTo(output, COPY_BUFFER_BYTES) }
+        try {
+            staging.outputStream().use { output -> source.copyTo(output, COPY_BUFFER_BYTES) }
+            require(PmtilesHeader.read(staging) != null) {
+                "ce fichier n'est pas une archive PMTiles v3"
+            }
+            destination.delete()
+            check(staging.renameTo(destination)) { "impossible de finaliser l'import" }
+        } finally {
+            staging.delete()
         }
-        require(looksLikePmtiles(staging)) {
-            "ce fichier n'est pas une archive PMTiles v3"
-        }
-        destination.delete()
-        check(staging.renameTo(destination)) { "impossible de finaliser l'import" }
-        Log.i(TAG, "imported ${destination.absolutePath} (${destination.length()} bytes)")
-        destination
-    }.onFailure { Log.w(TAG, "import failed", it) }
-
-    /** Cheap sanity check so a wrong pick fails at import rather than as a blank map. */
-    private fun looksLikePmtiles(file: File): Boolean =
-        PmtilesHeader.read(file) != null
+        Log.i(TAG, "installed ${destination.absolutePath} (${destination.length()} bytes)")
+        return destination
+    }
 
     private fun displayName(context: Context, uri: Uri): String {
         val fromProvider = runCatching {

@@ -22,6 +22,9 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import build_area
+import inspect_pmtiles
+import make_sample_pmtiles
 import mvt
 import png
 import terrain_rgb
@@ -202,6 +205,123 @@ class PmtilesArchiveTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 write_pmtiles(os.path.join(tmp, "t.pmtiles"), {},
                               bounds=(0.0, 0.0, 1.0, 1.0))
+
+
+class SyntheticSeabedTest(unittest.TestCase):
+    """The demo the app ships is this generator pointed at bounds it was not written for.
+
+    That is the whole failure mode. The features used to sit at hard-coded coordinates in
+    the Rade de Brest, so asking for a window anywhere else produced a rectangle of empty
+    water at a uniform depth -- which still opens, still colours in, and still looks like
+    a working app right up to the moment someone believes it.
+    """
+
+    #: Windows of deliberately different sizes, aspect ratios and latitudes.
+    WINDOWS = {
+        "rade de Brest (defaut)": make_sample_pmtiles.DEFAULT_BOUNDS,
+        "baie de Quiberon (embarquee)": (-3.32, 47.28, -2.65, 47.66),
+        "golfe normand-breton": (-2.35, 48.55, -1.75, 48.85),
+        "carre minuscule": (-3.01, 47.50, -3.00, 47.51),
+    }
+
+    @staticmethod
+    def _at(seabed: make_sample_pmtiles.Seabed, u: float, v: float) -> float:
+        min_lon, min_lat, max_lon, max_lat = seabed.bounds
+        return seabed.elevation_m(
+            min_lon + u * (max_lon - min_lon), min_lat + v * (max_lat - min_lat)
+        )
+
+    def test_every_feature_lands_inside_every_window(self):
+        for label, bounds in self.WINDOWS.items():
+            with self.subTest(label):
+                seabed = make_sample_pmtiles.Seabed(bounds)
+                shoal = self._at(seabed, *make_sample_pmtiles._SHOAL)
+                self.assertGreater(shoal, 0.5, "the shoal has to dry, or no red band")
+                self.assertLess(
+                    self._at(seabed, 0.2, make_sample_pmtiles._CHANNEL), -25.0,
+                    "expected the dredged channel",
+                )
+                self.assertTrue(
+                    terrain_rgb.is_no_data(self._at(seabed, *make_sample_pmtiles._HOLE)),
+                    "expected the unsurveyed hole",
+                )
+                self.assertGreater(self._at(seabed, 0.3, 0.99), 1.0, "expected land")
+
+    def test_soundings_do_not_stretch_with_the_window(self):
+        """A wider window must move the features, never deepen them.
+
+        Scaling the depths with the extent would be the easy way to write this, and it
+        would mean the demo of a big bay was a demo of a different sea.
+        """
+        depths = {
+            label: self._at(make_sample_pmtiles.Seabed(bounds), 0.2,
+                            make_sample_pmtiles._CHANNEL)
+            for label, bounds in self.WINDOWS.items()
+        }
+        self.assertLess(max(depths.values()) - min(depths.values()), 0.01, depths)
+
+    def test_refuses_an_inverted_window(self):
+        with self.assertRaises(ValueError):
+            make_sample_pmtiles.Seabed((-2.0, 48.0, -3.0, 47.0))
+
+
+class BundledDemoTest(unittest.TestCase):
+    """The demo shipped inside the APK is the only `.pmtiles` in git, so it is reviewed.
+
+    A committed binary is the one artefact nobody re-reads. This decodes it, the same way
+    the phone will, and fails if what comes out is not the chart the README describes --
+    including if it is simply missing, because an APK without it opens on an empty screen
+    while every document in the repo says it does not.
+    """
+
+    PATH = os.path.join(
+        REPO_ROOT, "app", "src", "main", "assets", "demo-quiberon-synthetic.pmtiles"
+    )
+    KOTLIN_CHART_ARCHIVE = os.path.join(
+        REPO_ROOT, "app", "src", "main", "kotlin", "org", "opennav", "chart",
+        "ChartArchive.kt",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.reader = PMTilesReader(cls.PATH)
+
+    def test_the_app_looks_for_the_file_that_is_actually_there(self):
+        with open(self.KOTLIN_CHART_ARCHIVE, encoding="utf-8") as fh:
+            match = re.search(r'BUNDLED_ASSET\s*=\s*"([^"]+)"', fh.read())
+        self.assertIsNotNone(match, "BUNDLED_ASSET not found in ChartArchive.kt")
+        self.assertEqual(os.path.basename(self.PATH), match.group(1))
+
+    def test_covers_exactly_the_area_a_real_chart_would_replace(self):
+        """Same bounds as the `morbihan` preset, so a survey substitutes for it cleanly.
+
+        Not cosmetic: the demo is beaten by a real chart on rank, not on extent, so a
+        survey built over a smaller window would leave the phone showing an invented
+        seabed at the edges of a real one with nothing to mark the join.
+        """
+        _, expected = build_area.AREAS["morbihan"]
+        for want, got in zip(expected, self.reader.bounds):
+            self.assertAlmostEqual(want, got, places=6)
+
+    def test_is_labelled_as_fiction_everywhere_it_can_be(self):
+        metadata = self.reader.metadata
+        self.assertTrue(metadata["synthetic"], "the red banner keys off this")
+        self.assertIn("NOT FOR NAVIGATION", metadata["description"])
+        self.assertNotIn("Shom", metadata["attribution"])
+        self.assertIn("synthetic", os.path.basename(self.PATH).lower())
+
+    def test_carries_the_three_features_the_phone_test_needs(self):
+        self.assertEqual(2, self.reader.tile_type, "Terrain-RGB tiles are PNG")
+        self.assertLessEqual(self.reader.min_zoom, 8)
+        self.assertGreaterEqual(self.reader.max_zoom, 14)
+
+        elevations: list[float] = []
+        for _, blob in inspect_pmtiles._tiles_at(self.reader, self.reader.max_zoom, 9):
+            elevations += _decode_terrain_png(blob)
+        surveyed = [e for e in elevations if not terrain_rgb.is_no_data(e)]
+        self.assertLess(min(surveyed), -25.0, "expected the dredged channel")
+        self.assertGreater(max(surveyed), 1.0, "expected something that dries")
+        self.assertLess(len(surveyed), len(elevations), "expected the unsurveyed hole")
 
 
 class SampleArchiveTest(unittest.TestCase):

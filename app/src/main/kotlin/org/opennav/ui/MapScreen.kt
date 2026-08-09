@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +67,41 @@ fun MapScreen(
     }
     val header = remember(located) { located.bathymetry?.header ?: located.seamarks?.header }
     var importing by remember { mutableStateOf(false) }
+
+    // True for the second or so of the very first launch, while the demo chart is copied
+    // out of the APK. Decided synchronously here rather than inside the effect, so the
+    // empty state never flashes up before the map it is about to be replaced by.
+    var unpacking by remember {
+        mutableStateOf(located.bathymetry == null && !settings.bundledChartSeeded)
+    }
+    val demoAvailable = remember { ChartArchive.hasBundled(context) }
+
+    /**
+     * Unpacks the demo out of the APK and displays it.
+     *
+     * Marked as done whether or not it worked. A build without the asset, or a phone with
+     * no room left, would otherwise retry on every launch and delay every one of them;
+     * the empty state keeps offering the button, which is the right place for a retry.
+     */
+    suspend fun installDemo() {
+        unpacking = true
+        val seeded = withContext(Dispatchers.IO) { ChartArchive.seedBundled(context) }
+        settings.bundledChartSeeded = true
+        unpacking = false
+        if (seeded == null) {
+            error = "Carte de démonstration indisponible dans cette version."
+            return
+        }
+        // Deliberately not recorded as the selected chart: the demo is a placeholder, and
+        // the first real survey imported over it has to win without the user having to
+        // say so twice.
+        located = ChartArchive.locate(context, settings.selectedChartPath)
+        error = null
+    }
+
+    LaunchedEffect(Unit) {
+        if (unpacking) installDemo()
+    }
 
     // The system picker, so a chart can be installed from the phone itself rather than
     // over adb. It hands back a content URI, which ChartArchive copies into the charts
@@ -147,7 +183,10 @@ fun MapScreen(
                 directory = remember { ChartArchive.preferredDirectory(context).absolutePath },
                 hasSeamarksOnly = located.seamarks != null,
                 importing = importing,
+                unpacking = unpacking,
+                canRestoreDemo = demoAvailable && !unpacking,
                 onImport = { pickChart.launch(CHART_PICKER_MIME_TYPES) },
+                onRestoreDemo = { scope.launch { installDemo() } },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -295,6 +334,7 @@ fun MapScreen(
             chartName = located.bathymetry?.file?.name,
             seamarkName = located.seamarks?.file?.name,
             header = header,
+            syntheticBathymetry = located.bathymetry?.header?.synthetic == true,
             onDismiss = { sheet = null },
         )
         null -> Unit
@@ -317,9 +357,21 @@ private fun NoChartInstalled(
     directory: String,
     hasSeamarksOnly: Boolean,
     importing: Boolean,
+    unpacking: Boolean,
+    canRestoreDemo: Boolean,
     onImport: () -> Unit,
+    onRestoreDemo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (unpacking) {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Text(
+                "Préparation de la carte de démonstration…",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        return
+    }
     Box(modifier, contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.padding(28.dp),
@@ -340,6 +392,11 @@ private fun NoChartInstalled(
                 style = MaterialTheme.typography.bodyMedium,
             )
             ImportChartButton(importing = importing, onClick = onImport)
+            if (canRestoreDemo) {
+                TextButton(onClick = onRestoreDemo) {
+                    Text("Remettre la carte de démonstration")
+                }
+            }
             Text(
                 "Vous pouvez aussi le déposer directement dans :\n$directory\n\n" +
                     "adb push ma-zone.pmtiles $directory/\n\n" +

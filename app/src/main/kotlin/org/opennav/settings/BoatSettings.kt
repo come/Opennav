@@ -65,6 +65,19 @@ class BoatSettings(context: Context) {
         get() = prefs.getBoolean(KEY_DISCLAIMER, false)
         set(value) = prefs.edit { putBoolean(KEY_DISCLAIMER, value) }
 
+    /**
+     * Whether the demo chart bundled in the APK has already been unpacked once.
+     *
+     * Recorded rather than inferred from the file being present, because the two differ
+     * in the case that matters: a user who deletes the demo -- from the settings sheet or
+     * with a file manager -- means it, and an app that silently restores it at the next
+     * launch is an app that puts a fictitious seabed back on the screen without being
+     * asked. The empty state offers to bring it back explicitly.
+     */
+    var bundledChartSeeded: Boolean
+        get() = prefs.getBoolean(KEY_SEEDED, false)
+        set(value) = prefs.edit { putBoolean(KEY_SEEDED, value) }
+
     private companion object {
         const val KEY_NAME = "boat_name"
         const val KEY_DRAFT = "boat_draft_m"
@@ -73,6 +86,7 @@ class BoatSettings(context: Context) {
         const val KEY_HUD = "show_perf_hud"
         const val KEY_DISCLAIMER = "disclaimer_accepted"
         const val KEY_CHART = "selected_chart_path"
+        const val KEY_SEEDED = "bundled_chart_seeded"
 
         const val DEFAULT_NAME = "Mon bateau"
         const val DEFAULT_DRAFT_M = 1.5f

@@ -76,6 +76,13 @@ android {
         compose = true
     }
 
+    androidResources {
+        // The bundled demo chart is a PMTiles archive of already-deflated PNG tiles.
+        // Deflating it a second time costs build time and gains nothing, and storing it
+        // uncompressed also means unpacking it on first launch is a straight copy.
+        noCompress += "pmtiles"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
