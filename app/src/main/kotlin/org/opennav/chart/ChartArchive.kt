@@ -19,8 +19,10 @@ import java.io.File
  *
  * Search order:
  *
- *  1. `Android/data/org.opennav/files/charts/*.pmtiles` -- writable over `adb push`
- *     without root and without any storage permission, which is why it is first.
+ *  1. The `charts` directory under `Android/data/org.opennav/files` -- writable over
+ *     `adb push` without root and without any storage permission, which is why it is
+ *     first. (Written out rather than glob-pasted: Kotlin block comments nest, so a
+ *     literal slash-star in a KDoc silently swallows the rest of the file.)
  *  2. The app's private `files/charts` directory, for anything the app placed itself.
  */
 object ChartArchive {

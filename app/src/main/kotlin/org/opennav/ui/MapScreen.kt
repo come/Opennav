@@ -184,7 +184,7 @@ fun MapScreen(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            error?.let { ErrorCard(it) { error = null } }
+            error?.let { ErrorCard(message = it, onDismiss = { error = null }) }
 
             if (routePoints.size >= 2) {
                 LegCard(

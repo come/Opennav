@@ -90,7 +90,7 @@ class PositionSource(private val context: Context) {
     private fun Location.toFix() = Fix(
         position = LatLon(latitude, longitude),
         accuracyMeters = if (hasAccuracy()) accuracy else null,
-        speedKnots = if (hasSpeed()) speed / MPS_PER_KNOT else null,
+        speedKnots = if (hasSpeed()) (speed / MPS_PER_KNOT).toDouble() else null,
         // A GPS course is only meaningful once moving; standing still it is noise, and
         // showing noise as a heading on a chart plotter is worse than showing nothing.
         courseOverGroundDegrees = if (hasBearing() && hasSpeed() && speed > MIN_COG_SPEED_MPS) {
