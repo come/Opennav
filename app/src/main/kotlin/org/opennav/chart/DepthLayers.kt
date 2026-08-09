@@ -7,6 +7,7 @@
  */
 package org.opennav.chart
 
+import android.util.Log
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.ColorReliefLayer
@@ -303,31 +304,58 @@ object DepthLayers {
     private const val LIGHT = "rgba(255,245,200,1)"
     private const val UNKNOWN_MARK = "rgba(200,200,210,1)"
 
+    /**
+     * Runs [block] only if [style] is still the one on screen.
+     *
+     * MapLibre throws `IllegalStateException: Calling getSourceAs when a newer style is
+     * loading/has loaded` the moment a `Style` stops being current, and a `Style` stops
+     * being current as soon as `setStyle` is called again -- which is what importing a
+     * chart does. A GPS fix arriving inside that window took the app down on a Pixel 5.
+     *
+     * Two guards, because they cover different things. `isFullyLoaded` is the documented
+     * state the exception is thrown on, and catching is what remains for the race between
+     * reading that flag and using the object: the style can be replaced from the map
+     * thread between the two. Losing one frame of the position dot is not worth a crash,
+     * and every caller re-applies its state when the new style arrives.
+     */
+    private inline fun onCurrentStyle(style: Style, block: (Style) -> Unit) {
+        if (!style.isFullyLoaded) return
+        try {
+            block(style)
+        } catch (error: IllegalStateException) {
+            // The exact and only thing MapLibre raises for a superseded style. Anything
+            // else is a bug in this file and has no business being swallowed here.
+            Log.w(TAG, "style update skipped: ${error.message}")
+        }
+    }
+
     /** Re-colours the depth layer. Cheap enough to call on every slider frame. */
     fun updateDepthRamp(
         style: Style,
         boat: BoatProfile,
         tideHeightMeters: Double,
         deepRangeMeters: Double,
-    ) {
-        val layer = style.getLayerAs<ColorReliefLayer>(LAYER_DEPTH) ?: return
+    ) = onCurrentStyle(style) {
+        val layer = it.getLayerAs<ColorReliefLayer>(LAYER_DEPTH) ?: return@onCurrentStyle
         layer.setProperties(
             PropertyFactory.colorReliefColor(colorRamp(boat, tideHeightMeters, deepRangeMeters)),
         )
     }
 
-    fun updateRoute(style: Style, points: List<LatLon>) {
-        style.getSourceAs<GeoJsonSource>(SOURCE_ROUTE)?.setGeoJson(routeGeoJson(points))
+    fun updateRoute(style: Style, points: List<LatLon>) = onCurrentStyle(style) {
+        it.getSourceAs<GeoJsonSource>(SOURCE_ROUTE)?.setGeoJson(routeGeoJson(points))
     }
 
-    fun updatePosition(style: Style, position: LatLon?) {
+    fun updatePosition(style: Style, position: LatLon?) = onCurrentStyle(style) {
         val json = if (position == null) {
             emptyFeatureCollection()
         } else {
             """{"type":"FeatureCollection","features":[${pointFeature(position)}]}"""
         }
-        style.getSourceAs<GeoJsonSource>(SOURCE_POSITION)?.setGeoJson(json)
+        it.getSourceAs<GeoJsonSource>(SOURCE_POSITION)?.setGeoJson(json)
     }
+
+    private const val TAG = "DepthLayers"
 
     private fun colorRamp(
         boat: BoatProfile,

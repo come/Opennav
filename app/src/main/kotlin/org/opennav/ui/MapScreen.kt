@@ -160,7 +160,6 @@ fun MapScreen(
         if (!locationGranted) return@LaunchedEffect
         PositionSource(context).fixes().collectLatest { newFix ->
             fix = newFix
-            style?.let { DepthLayers.updatePosition(it, newFix.position) }
             if (following) {
                 map?.animateCamera(
                     CameraUpdateFactory.newLatLng(
@@ -170,6 +169,15 @@ fun MapScreen(
                 )
             }
         }
+    }
+
+    // The dot is drawn from an effect keyed on the style, not from inside the location
+    // collector. The collector outlives a style reload -- importing a chart builds a new
+    // one -- so it used to write into a Style that was no longer on screen, which is an
+    // exception rather than a no-op. Keying on the style also means the dot reappears on
+    // the new style immediately instead of waiting for the next fix.
+    LaunchedEffect(style, fix) {
+        style?.let { DepthLayers.updatePosition(it, fix?.position) }
     }
 
     LaunchedEffect(style, boat, tideMeters, deepRange) {
