@@ -43,6 +43,7 @@ object DepthLayers {
 
     const val LAYER_BACKGROUND = "background"
     const val LAYER_DEPTH = "depth"
+    const val LAYER_SHORE_BAND = "base-shore-band"
     const val LAYER_WATER = "base-water"
     const val LAYER_HARBOUR = "base-harbour"
     const val LAYER_LAND = "base-land"
@@ -182,6 +183,44 @@ object DepthLayers {
      * filled because their rings are closed in OSM already.
      */
     private fun basemapLayers(): List<org.maplibre.android.style.layers.Layer> = listOf(
+        // A tint along the landward side of the shore.
+        //
+        // The mainland has no polygon to fill, so without this the only thing separating
+        // a headland from the channel beside it is a one-pixel line, and on a dark screen
+        // that is not a distinction anyone makes at a glance. OSM draws coastline with
+        // the land on the left of the way, and MapLibre offsets a line to the right of
+        // its direction, so a negative offset lands the band on the ground every time --
+        // no polygon assembly, and no way for it to invert.
+        //
+        // Its width is in pixels, which is what keeps it safe. A band that scaled with
+        // the ground would close over a narrow pass as you zoomed in, painting navigable
+        // water as shore; a constant handful of pixels covers less and less ground the
+        // closer you look, so the one place it could mislead is the one place it retreats
+        // from. It stops entirely below z9, where the Brittany coastline is too intricate
+        // for a band to be anything but a smear.
+        LineLayer(LAYER_SHORE_BAND, SOURCE_BASEMAP)
+            .withSourceLayer(SOURCE_LAYER_COASTLINE)
+            .withProperties(
+                PropertyFactory.lineColor(LAND_FILL),
+                PropertyFactory.lineWidth(
+                    Expression.interpolate(
+                        Expression.linear(), Expression.zoom(),
+                        Expression.stop(9, 0.0f),
+                        Expression.stop(11, 6.0f),
+                        Expression.stop(14, 10.0f),
+                        Expression.stop(18, 10.0f),
+                    ),
+                ),
+                PropertyFactory.lineOffset(
+                    Expression.interpolate(
+                        Expression.linear(), Expression.zoom(),
+                        Expression.stop(9, 0.0f),
+                        Expression.stop(11, -3.0f),
+                        Expression.stop(14, -5.0f),
+                        Expression.stop(18, -5.0f),
+                    ),
+                ),
+            ),
         FillLayer(LAYER_WATER, SOURCE_BASEMAP)
             .withSourceLayer(SOURCE_LAYER_WATER)
             .withProperties(

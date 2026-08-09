@@ -72,9 +72,14 @@ LAYER_ORDER = (
     LAYER_LAND, LAYER_WATER, LAYER_HARBOUR, LAYER_COASTLINE, LAYER_STRUCTURE, LAYER_PLACE,
 )
 
+#: Water bodies that are actually bodies of water.
+#:
+#: `natural=bay` and `natural=strait` are deliberately absent. They are names for a piece
+#: of open sea, and OSM closes them with an arbitrary straight line across the mouth --
+#: so mapping them produced a fill covering the Golfe du Morbihan whose southern edge was
+#: a ruled line across navigable water. Nothing about that edge exists.
 WATER_TAGS = {
     ("natural", "water"),
-    ("natural", "bay"),
     ("landuse", "reservoir"),
     ("landuse", "basin"),
     ("waterway", "riverbank"),
@@ -214,12 +219,17 @@ class Reader:
     def _area(self, area) -> None:
         tags = area.tags
         pairs = {(tag.k, tag.v) for tag in tags}
-        if pairs & WATER_TAGS:
+        matched = pairs & WATER_TAGS
+        if matched:
             layer = LAYER_WATER
-        elif pairs & HARBOUR_TAGS:
-            layer = LAYER_HARBOUR
         else:
-            return
+            matched = pairs & HARBOUR_TAGS
+            if not matched:
+                return
+            layer = LAYER_HARBOUR
+        # Carried through so the app can style or drop a category without a rebuild being
+        # the only remedy. The bay fill had to wait for one of those.
+        kind = sorted(matched)[0][1]
 
         for outer in area.outer_rings():
             exterior = _ring_points(outer)
@@ -230,9 +240,9 @@ class Reader:
                 hole = _ring_points(inner)
                 if hole is not None:
                     rings.append(hole)
-            self.layers[layer].append(
-                PolygonFeature(rings=rings, properties=_name_properties(tags))
-            )
+            properties = {"kind": kind}
+            properties.update(_name_properties(tags))
+            self.layers[layer].append(PolygonFeature(rings=rings, properties=properties))
 
     def _node(self, node) -> None:
         kind = node.tags.get("place")

@@ -407,6 +407,24 @@ class BuildBasemapTest(unittest.TestCase):
                 for f in coastline)
         )
 
+    def test_a_bay_is_not_a_body_of_water(self):
+        """`natural=bay` names a piece of open sea, and OSM closes it with a ruled line.
+
+        Mapping it as water put a fill over the whole Golfe du Morbihan whose southern
+        edge was a straight line across navigable water. Nothing about that edge exists,
+        and a chart that draws one is inventing a boundary.
+        """
+        names = {f["properties"].get("name") for f in self._features(13).get("water", [])}
+        self.assertNotIn("Golfe imaginaire", names)
+        self.assertIn("Etang", names, "a real lake must still be drawn")
+
+    def test_water_and_harbours_carry_their_category(self):
+        # So the app can drop or restyle a category without the only remedy being a
+        # rebuild of everyone's base map.
+        layers = self._features(13)
+        self.assertEqual("water", layers["water"][0]["properties"]["kind"])
+        self.assertEqual("marina", layers["harbour"][0]["properties"]["kind"])
+
     def test_water_harbours_and_structures_survive(self):
         layers = self._features(13)
         self.assertEqual("Etang", layers["water"][0]["properties"]["name"])
@@ -835,6 +853,8 @@ SAMPLE_COAST_OSM = """<?xml version='1.0' encoding='UTF-8'?>
   <way id="103"><nd ref="30"/><nd ref="31"/><tag k="man_made" v="pier"/></way>
   <way id="104"><nd ref="40"/><nd ref="41"/><nd ref="42"/><nd ref="43"/><nd ref="40"/>
     <tag k="leisure" v="marina"/><tag k="name" v="Port-Haliguen"/></way>
+  <way id="105"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="10"/><nd ref="1"/>
+    <tag k="natural" v="bay"/><tag k="name" v="Golfe imaginaire"/></way>
 </osm>
 """
 

@@ -67,7 +67,11 @@ fun MapScreen(
     var located by remember {
         mutableStateOf(ChartArchive.locate(context, settings.selectedChartPath))
     }
-    val header = remember(located) { located.bathymetry?.header ?: located.seamarks?.header }
+    // Same precedence as `any`, and it matters: this header sets the camera's zoom
+    // envelope. Skipping the base map meant that with no bathymetry the limits came from
+    // the buoyage, which starts at z10 -- so the map could not be zoomed out past the
+    // scale of a bay, on top of a base map that goes down to z6.
+    val header = remember(located) { located.any?.header }
     var importing by remember { mutableStateOf(false) }
 
     // True for the second or so of the very first launch, while the bundled charts are
