@@ -29,10 +29,16 @@ L'archive se déclare `"synthetic": true` dans ses métadonnées et son nom le d
 
 ## Avec de vraies dalles Litto3D
 
-1. Télécharger les prépaquets Bretagne sur `diffusion.shom.fr` (compte requis).
+La procédure complète, depuis le compte SHOM jusqu'au fichier sur le téléphone, est dans
+le [README principal](../README.md#obtenir-la-bathymétrie-de-la-bretagne). En résumé :
+
+1. Télécharger les prépaquets Bretagne sur `diffusion.shom.fr` (compte gratuit requis),
+   en prenant le **MNT raster** et non le nuage de points LAZ.
 2. **Trancher la question du référentiel vertical** — voir [../docs/DATA.md](../docs/DATA.md) §5.
    Le script refuse de tourner sans réponse explicite, et c'est volontaire : une valeur
    par défaut silencieuse produirait une app qui marche en se trompant de trois mètres.
+   La valeur de 3,64 m utilisée dans les exemples est un ordre de grandeur pour Brest,
+   pas une donnée vérifiée : lisez l'annuaire du SHOM pour votre port de référence.
 
 ```bash
 pip install -r tools/requirements.txt

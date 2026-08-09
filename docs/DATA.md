@@ -88,8 +88,12 @@ constantes Kotlin pour vérifier que les deux ne divergent pas.
 ## 5. Référentiel vertical des dalles Litto3D — à vérifier avant tout levé réel
 
 Litto3D est livré en altitudes **IGN 1969** (RGF93 / Lambert-93 en planimétrie). L'app
-travaille au **zéro hydrographique**. L'écart n'est pas constant le long de la côte : il
-vaut environ 3,64 m à Brest et diffère sensiblement à Saint-Malo.
+travaille au **zéro hydrographique**. L'écart n'est pas constant le long de la côte.
+
+La valeur de **3,64 m** qui revient dans les exemples de ce dépôt est un ordre de grandeur
+pour Brest, **pas une donnée vérifiée ici**. Lisez la cote du zéro hydrographique de votre
+port de référence dans l'annuaire des marées du SHOM avant de l'utiliser, et ne vous
+servez d'une constante que sur une zone où une seule valeur a du sens.
 
 `build_bathymetry.py` **refuse de tourner** sans que l'un des trois soit fourni :
 

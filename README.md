@@ -52,15 +52,95 @@ adb push sample.pmtiles /sdcard/Android/data/org.opennav/files/charts/
 Puis balayez le slider « Hauteur d'eau simulée » : le haut-fond doit passer du bleu au
 jaune, à l'orange, au rouge, et le trou de données doit rester violet quoi qu'il arrive.
 
-### Avec de vraies données
+## Obtenir la bathymétrie de la Bretagne
+
+**Il n'existe pas de carte Bretagne à télécharger.** Le dépôt ne contient aucune donnée
+SHOM et n'en contiendra pas : Litto3D fait plusieurs dizaines de gigaoctets et sa licence
+demande une attribution que seul l'écran Sources peut porter. Vous fabriquez le fichier
+une fois, sur un poste de travail, puis vous le poussez sur le téléphone. Comptez une
+soirée pour la première zone, quelques minutes pour les suivantes.
+
+### 1. Récupérer les dalles Litto3D
+
+Sur **[diffusion.shom.fr](https://diffusion.shom.fr)** — compte gratuit obligatoire.
+Cherchez le produit **Litto3D® Bretagne 2018-2021**
+([DOI 10.17183/LITTO3D_BZH_2018_2021](https://doi.org/10.17183/LITTO3D_BZH_2018_2021)),
+puis téléchargez les prépaquets **de la zone qui vous intéresse seulement** — la Bretagne
+entière est inutilement lourde pour commencer.
+
+Deux choses à ne pas rater au moment de choisir :
+
+* prenez le **MNT raster** (grille régulière, `.asc` ou `.tif`), **pas** le nuage de
+  points LAZ. Le pipeline lit des rasters ;
+* notez le **référentiel altimétrique** annoncé dans la notice du produit. C'est la seule
+  information dont vous aurez besoin ensuite, et c'est celle qui peut tout fausser.
+
+### 2. Trancher la question du zéro hydrographique
+
+Litto3D est livré en altitudes **IGN 1969**. L'app raisonne en hauteurs au-dessus du
+**zéro hydrographique** (ZH). L'écart entre les deux vaut plusieurs mètres et **varie le
+long de la côte** : ce n'est pas un détail cosmétique, c'est un décalage systématique sur
+toutes les profondeurs affichées.
+
+`build_bathymetry.py` refuse donc de tourner sans réponse explicite. Trois façons de
+répondre, de la moins bonne à la meilleure :
+
+```bash
+--datum-shift 3.64            # une constante, en mètres, à ajouter aux altitudes source
+--datum-grid separation.tif   # une grille de séparation, échantillonnée par pixel
+--already-chart-datum         # le produit est déjà référencé au ZH
+```
+
+> **La valeur `3.64` est un exemple, pas une donnée vérifiée par ce dépôt.** C'est l'ordre
+> de grandeur de la cote du zéro hydrographique à Brest. **Allez la lire dans l'annuaire
+> des marées du SHOM pour votre port de référence**, et n'utilisez une constante que sur
+> une zone assez petite pour qu'une seule valeur ait un sens — une rade, pas un
+> département. Au-delà, `--datum-grid` est la bonne réponse.
+>
+> Si la notice du produit dit que les données sont déjà au ZH, passez
+> `--already-chart-datum` — mais parce que vous l'avez lu, pas parce que c'est probable.
+
+### 3. Construire le `.pmtiles`
 
 ```bash
 pip install -r tools/requirements.txt
+
 ./tools/build_bathymetry.py \
-    --input '~/litto3d/finistere/*.asc' \
-    --out finistere.pmtiles \
-    --datum-shift 3.64          # obligatoire : voir docs/DATA.md §5
+    --input '~/litto3d/rade-de-brest/*.asc' \
+    --out rade-de-brest.pmtiles \
+    --area-name "Rade de Brest" \
+    --datum-shift 3.64
 ```
+
+Le script affiche le nombre de tuiles par zoom et le poids final. Utile avant de lancer
+une grosse zone :
+
+```bash
+./tools/estimate_volume.py --mode band     # combien de tuiles, et quel budget par tuile
+```
+
+### 4. Le pousser sur le téléphone
+
+```bash
+adb shell mkdir -p /sdcard/Android/data/org.opennav/files/charts
+adb push rade-de-brest.pmtiles /sdcard/Android/data/org.opennav/files/charts/
+```
+
+Pas d'`adb` sous la main ? N'importe quel gestionnaire de fichiers ou un câble USB font
+l'affaire : le dossier `Android/data/org.opennav/files/charts` est accessible sans root et
+sans permission de stockage. Redémarrez l'app après avoir déposé le fichier.
+
+L'app prend le **plus gros** `.pmtiles` du dossier, pour qu'un vrai levé l'emporte
+naturellement sur l'échantillon synthétique. Vérifiez laquelle est chargée dans
+**Sources** : le nom du fichier, la plage de zooms et l'emprise y sont affichés.
+
+### Ce que l'app ne vérifie pas encore
+
+Elle colorise n'importe quel Terrain-RGB qu'on lui donne, **sans savoir d'où il vient**.
+Un MNT à 100 m de maille (EMODnet, GEBCO) s'affichera exactement comme un levé à 10 m,
+avec la même confiance apparente et sans le moindre avertissement. N'y mettez que ce que
+vous avez construit avec `build_bathymetry.py`, à partir d'un levé dont vous connaissez la
+résolution et le référentiel.
 
 ## Interface
 
