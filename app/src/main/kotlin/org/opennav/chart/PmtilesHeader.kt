@@ -12,6 +12,8 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.GZIPInputStream
+import org.json.JSONObject
 
 /**
  * The fixed 127-byte PMTiles v3 header, read directly.
@@ -36,6 +38,14 @@ data class PmtilesHeader(
     val centerLon: Double,
     val centerLat: Double,
     val addressedTiles: Long,
+    /**
+     * True when the archive says it was fabricated by `make_sample_pmtiles.py`.
+     *
+     * That generator can now target any bounds, which makes it easy to put an invented
+     * seabed under a real coastline while waiting for a survey. Useful, and exactly the
+     * sort of thing that must never be mistaken for data.
+     */
+    val synthetic: Boolean,
 ) {
     companion object {
         private const val TAG = "PmtilesHeader"
@@ -58,7 +68,14 @@ data class PmtilesHeader(
             if (bytes[7].toInt() != 3) return null
 
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            val synthetic = readsAsSynthetic(
+                file,
+                offset = buffer.getLong(24),
+                length = buffer.getLong(32),
+                compression = bytes[97].toInt() and 0xFF,
+            )
             PmtilesHeader(
+                synthetic = synthetic,
                 tileType = bytes[99].toInt() and 0xFF,
                 addressedTiles = buffer.getLong(72),
                 minZoom = bytes[100].toInt() and 0xFF,
@@ -74,5 +91,30 @@ data class PmtilesHeader(
         }.onFailure { Log.w(TAG, "could not read ${file.name}", it) }.getOrNull()
 
         private fun Int.toE7(): Double = this / 10_000_000.0
+
+        private const val COMPRESSION_GZIP = 2
+
+        /** Metadata is a small JSON blob; a chart that lies about this is not our problem. */
+        private fun readsAsSynthetic(
+            file: File,
+            offset: Long,
+            length: Long,
+            compression: Int,
+        ): Boolean = runCatching {
+            if (length <= 0 || length > MAX_METADATA_BYTES) return false
+            val raw = ByteArray(length.toInt())
+            RandomAccessFile(file, "r").use { raf ->
+                raf.seek(offset)
+                raf.readFully(raw)
+            }
+            val json = if (compression == COMPRESSION_GZIP) {
+                GZIPInputStream(raw.inputStream()).use { it.readBytes() }
+            } else {
+                raw
+            }
+            JSONObject(String(json, Charsets.UTF_8)).optBoolean("synthetic", false)
+        }.getOrDefault(false)
+
+        private const val MAX_METADATA_BYTES = 4L * 1024 * 1024
     }
 }

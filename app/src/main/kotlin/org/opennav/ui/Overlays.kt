@@ -62,6 +62,26 @@ fun DisclaimerBanner(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * Shown whenever the loaded bathymetry declares itself invented.
+ *
+ * Louder than the permanent disclaimer on purpose: that one says the data may be wrong,
+ * this one says there is no data. A fabricated seabed under a real coastline looks
+ * entirely convincing, which is the whole problem.
+ */
+@Composable
+fun SyntheticChartBanner(modifier: Modifier = Modifier) {
+    Text(
+        text = "CARTE FICTIVE — fond marin inventé, ne pas naviguer avec",
+        style = MaterialTheme.typography.labelMedium,
+        color = Color.White,
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .background(Color(0xE6D7191C))
+            .padding(vertical = 5.dp, horizontal = 8.dp),
+    )
+}
+
 @Composable
 fun SettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     FilledIconButton(

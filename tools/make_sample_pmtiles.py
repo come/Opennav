@@ -186,10 +186,22 @@ def _encode_level(level: _Level, tile_size: int) -> dict[tuple[int, int, int], b
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", default="sample-brest-synthetic.pmtiles")
+    parser.add_argument(
+        "--bounds", type=float, nargs=4,
+        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
+        help="fabriquer le fond ailleurs qu'en rade de Brest -- pratique pour poser un "
+             "fond factice sous un vrai balisage en attendant les donnees Litto3D. "
+             "L'archive reste marquee synthetique et l'app affiche un bandeau rouge.",
+    )
     parser.add_argument("--tile-size", type=int, default=tiles.TILE_SIZE)
     parser.add_argument("--min-zoom", type=int, default=MIN_ZOOM)
     parser.add_argument("--max-zoom", type=int, default=MAX_ZOOM)
     args = parser.parse_args()
+
+    if args.bounds:
+        global BOUNDS
+        BOUNDS = tuple(args.bounds)
+        print(f"fond synthetique sur {BOUNDS} -- NE PAS NAVIGUER AVEC", flush=True)
 
     started = time.monotonic()
     print(f"sampling z{args.max_zoom} ...", flush=True)

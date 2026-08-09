@@ -185,19 +185,24 @@ fun MapScreen(
             }
         }
 
-        DisclaimerBanner(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 .fillMaxWidth(),
-        )
+        ) {
+            DisclaimerBanner(modifier = Modifier.fillMaxWidth())
+            if (located.bathymetry?.header?.synthetic == true) {
+                SyntheticChartBanner(modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         SettingsButton(
             onClick = { sheet = Sheet.SETTINGS },
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 34.dp, end = 12.dp),
+                .padding(top = TOP_BANNER_INSET, end = 12.dp),
         )
 
         if (showHud) {
@@ -210,7 +215,7 @@ fun MapScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
-                    .padding(top = 34.dp, start = 12.dp),
+                    .padding(top = TOP_BANNER_INSET, start = 12.dp),
             )
         }
 
@@ -349,6 +354,9 @@ private fun NoChartInstalled(
 
 /** MIME types offered to the system picker. PMTiles has no registered type of its own. */
 private val CHART_PICKER_MIME_TYPES = arrayOf("application/octet-stream", "*/*")
+
+/** Clears the disclaimer band, and the fictitious-chart band when it is showing. */
+private val TOP_BANNER_INSET = 56.dp
 
 private const val INITIAL_TIDE_METERS = 3.0
 private const val RECENTER_MIN_ZOOM = 13.0
