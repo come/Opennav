@@ -221,8 +221,21 @@ object DepthLayers {
                     ),
                 ),
             ),
+        // Only water areas that say what they are.
+        //
+        // A base map built before bays were excluded cannot tell a lake from a piece of
+        // open sea named "Golfe du Morbihan", and drew the second as a fill ending in a
+        // ruled line across navigable water. Those builds emit no `kind` on any water
+        // area; every build since emits one on all of them, so the property doubles as a
+        // version marker and the fix reaches an archive already on a phone without
+        // anyone rebuilding it.
+        //
+        // The cost is that an older archive loses its inland lakes too. That is the
+        // right way round: a missing pond is a missing decoration, an invented shoreline
+        // is a chart saying something untrue about where a boat can go.
         FillLayer(LAYER_WATER, SOURCE_BASEMAP)
             .withSourceLayer(SOURCE_LAYER_WATER)
+            .withFilter(Expression.has("kind"))
             .withProperties(
                 PropertyFactory.fillColor(WATER_FILL),
                 PropertyFactory.fillOpacity(1.0f),
