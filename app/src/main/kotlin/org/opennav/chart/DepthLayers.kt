@@ -70,8 +70,18 @@ object DepthLayers {
 
     private const val EMPTY_STYLE = """{"version":8,"sources":{},"layers":[]}"""
 
-    /** Colour behind everything: not blue, so "no tile here" cannot read as water. */
-    private const val BACKGROUND_ARGB = 0xFF1A1A1E.toInt()
+    /**
+     * Colour behind everything, and deliberately **not** blue.
+     *
+     * This shows wherever no tile exists at all, which includes the sea when no
+     * bathymetry is installed. Colouring it as water is the obvious way to stop the map
+     * looking like a void and it is the wrong trade: a dark navy sits a shade away from
+     * the deep end of the safe-water ramp, so the edge of a survey would read as more
+     * survey. "Nothing known here" has to look like nothing, not like deep water.
+     *
+     * Lifted off black, though. A void is not more honest for being unreadable.
+     */
+    private const val BACKGROUND_ARGB = 0xFF1E2126.toInt()
 
     /**
      * @param archive Terrain-RGB bathymetry, or null to draw everything else without it.
@@ -195,12 +205,15 @@ object DepthLayers {
             .withSourceLayer(SOURCE_LAYER_COASTLINE)
             .withProperties(
                 PropertyFactory.lineColor(SHORE_LINE),
+                // Wider than a hairline on purpose. With the mainland unfilled this
+                // stroke is the entire answer to "where does the water stop", so it has
+                // to survive a glance at arm's length on a moving boat.
                 PropertyFactory.lineWidth(
                     Expression.interpolate(
                         Expression.linear(), Expression.zoom(),
-                        Expression.stop(6, 0.6f),
-                        Expression.stop(11, 1.4f),
-                        Expression.stop(16, 2.6f),
+                        Expression.stop(6, 0.8f),
+                        Expression.stop(11, 2.0f),
+                        Expression.stop(16, 3.6f),
                     ),
                 ),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
@@ -231,12 +244,20 @@ object DepthLayers {
             ),
     )
 
-    private const val LAND_FILL = 0xFF2E3A2C.toInt()
-    private const val SHORE_LINE = 0xFFBFC9B4.toInt()
-    private const val WATER_FILL = 0xFF16324A.toInt()
-    private const val HARBOUR_FILL = 0xFF3A4652.toInt()
-    private const val STRUCTURE_LINE = 0xFF8A8F96.toInt()
-    private const val PLACE_DOT = 0xFFD8D8D0.toInt()
+    // Warm for what is dry, cool for what is wet, and nothing in between. That is the
+    // one distinction the eye should make without reading anything, so it is carried by
+    // hue rather than by lightness: a paper chart is legible photocopied, and a screen
+    // at night is dimmed until lightness differences stop existing.
+    //
+    // Everything here is dark. This is looked at from a cockpit after sunset, where a
+    // pale fill is a flash-blind waiting to happen and the pupil never recovers before
+    // the next glance at the water.
+    private const val LAND_FILL = 0xFF554A32.toInt()
+    private const val SHORE_LINE = 0xFFE2D8BA.toInt()
+    private const val WATER_FILL = 0xFF10334F.toInt()
+    private const val HARBOUR_FILL = 0xFF2A3F52.toInt()
+    private const val STRUCTURE_LINE = 0xFFBDB4A0.toInt()
+    private const val PLACE_DOT = 0xFFEFE8D6.toInt()
 
     /**
      * Buoyage, drawn as coloured dots.
