@@ -52,12 +52,18 @@ jobs:
       # The encoder, the PMTiles writer and the sample generator need only the standard
       # library. rasterio is installed so that the GDAL pipeline tests run too -- that is
       # the script where a sign error would quietly make every depth optimistic, so it is
-      # worth the thirty seconds.
+      # worth the thirty seconds. osmium and the reference MVT decoder are installed for
+      # the same reason: without them the OSM builders and the hand-rolled protobuf are
+      # not tested at all, and the suite says so only by quietly skipping.
       - name: Install the pipeline dependencies
-        run: pip install -r tools/requirements.txt
+        run: pip install -r tools/requirements.txt -r tools/requirements-dev.txt
 
+      # OPENNAV_STRICT_TESTS turns "skipped because a library is missing" into a
+      # failure. On a contributor's machine those tests still skip politely.
       - name: Tests
         run: python3 -m unittest discover -s tools -v
+        env:
+          OPENNAV_STRICT_TESTS: "1"
 
       - name: Generate the sample archive
         run: python3 tools/make_sample_pmtiles.py --out sample-brest-synthetic.pmtiles

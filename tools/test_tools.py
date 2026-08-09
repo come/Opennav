@@ -24,7 +24,6 @@ from xml.etree import ElementTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import build_area
-import build_basemap
 import inspect_pmtiles
 import make_sample_pmtiles
 import mvt
@@ -33,11 +32,48 @@ import terrain_rgb
 import tiles
 from pmtiles import PMTilesReader, write_pmtiles, zxy_to_tile_id
 
+# Optional, and detected here rather than further down because the classes that need
+# them are decorated with skipUnless at definition time.
+#
+# build_basemap imports osmium at module scope and exits if it is missing, which is
+# right for a command-line tool and fatal for a test module -- hence catching SystemExit
+# as well, so a machine without a geospatial stack still runs the other fifty tests.
+try:
+    import mapbox_vector_tile
+    HAS_MVT_DECODER = True
+except ImportError:  # pragma: no cover
+    HAS_MVT_DECODER = False
+
+try:
+    import osmium  # noqa: F401
+    import build_basemap
+    HAS_OSMIUM = True
+except (ImportError, SystemExit):  # pragma: no cover
+    HAS_OSMIUM = False
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KOTLIN_TERRAIN_RGB = os.path.join(
     REPO_ROOT, "core", "depth", "src", "main", "kotlin", "org", "opennav", "core", "depth",
     "TerrainRgb.kt",
 )
+
+
+class OptionalDependencyTest(unittest.TestCase):
+    """In CI, "skipped" must not be allowed to look like "passed".
+
+    Both optional libraries were absent from the CI image for as long as they have
+    existed, so `BuildSeamarksTest` and the round-trip against the reference MVT decoder
+    had never once run there -- and the suite reported green throughout. Skipping is the
+    right behaviour on a contributor's laptop and the wrong one on a build server, so
+    the build server sets OPENNAV_STRICT_TESTS and this fails instead.
+    """
+
+    @unittest.skipUnless(os.environ.get("OPENNAV_STRICT_TESTS"), "not a strict run")
+    def test_nothing_is_quietly_skipped(self):
+        self.assertTrue(HAS_OSMIUM, "osmium missing: the OSM builders are untested")
+        self.assertTrue(
+            HAS_MVT_DECODER, "mapbox-vector-tile missing: the MVT writer is unverified"
+        )
 
 
 class KotlinParityTest(unittest.TestCase):
@@ -316,6 +352,7 @@ class MvtGeometryTest(unittest.TestCase):
         self.assertEqual(points, mvt.simplify(points, 4.0))
 
 
+@unittest.skipUnless(HAS_OSMIUM and HAS_MVT_DECODER, "osmium / decoder not installed")
 class BuildBasemapTest(unittest.TestCase):
     """The base map, end to end, over a hand-written extract.
 
@@ -650,18 +687,6 @@ class BuildBathymetryTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("datum", result.stderr.lower())
 
-
-try:
-    import mapbox_vector_tile
-    HAS_MVT_DECODER = True
-except ImportError:  # pragma: no cover
-    HAS_MVT_DECODER = False
-
-try:
-    import osmium  # noqa: F401
-    HAS_OSMIUM = True
-except ImportError:  # pragma: no cover
-    HAS_OSMIUM = False
 
 SAMPLE_OSM = """<?xml version='1.0' encoding='UTF-8'?>
 <osm version="0.6" generator="opennav-test">

@@ -1,0 +1,9 @@
+# Needed to run the whole test suite, and to build anything from an OSM extract.
+#
+# Split from requirements.txt on purpose. That file is what build_bathymetry.py needs;
+# this one is what the tests need to stop skipping. Both are installed in CI, and
+# test_tools.py::OptionalDependencyTest fails there if either is missing -- because a
+# test that skips itself reports green, and the MVT encoder went unverified in CI for
+# exactly that reason.
+osmium>=4.0
+mapbox-vector-tile>=2.0
